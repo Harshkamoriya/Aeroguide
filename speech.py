@@ -117,7 +117,7 @@ def synthesize(text: str, base_url: str) -> bytes:
         resp = requests.post(
             f"{base_url}/test/synthesize",
             json    = {"text": text},
-            timeout = 30,
+            timeout = 90,
         )
         resp.raise_for_status()
         return resp.content

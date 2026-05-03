@@ -30,6 +30,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 load_dotenv = __import__('dotenv').load_dotenv
@@ -371,6 +372,8 @@ def health():
 
 
 # ── Entry point ────────────────────────────────────────────────────────────
+
+app.mount("/", StaticFiles(directory="web", html=True), name="web")
 
 if __name__ == "__main__":
     import uvicorn

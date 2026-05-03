@@ -522,6 +522,35 @@ def resolve_parking(terminal: str = None) -> list[dict]:
         return []
 
 
+def resolve_popular_items(limit: int = 15) -> list[dict]:
+    """Return affordable menu items across all brands, useful for general food queries."""
+    try:
+        conn = _db_conn()
+        rows = conn.execute(
+            """
+            SELECT mi.item_name, mi.category, mi.price_inr, mi.is_vegetarian,
+                   b.name  AS brand_name,
+                   t.code  AS terminal_code,
+                   f.floor_code
+            FROM menu_items mi
+            JOIN brands      b ON mi.brand_id   = b.brand_id
+            JOIN restaurants r ON r.brand_id    = mi.brand_id
+            JOIN floors      f ON r.floor_id    = f.floor_id
+            JOIN terminals   t ON f.terminal_id = t.terminal_id
+            WHERE mi.is_available = 1
+            GROUP BY mi.item_name, b.name
+            ORDER BY mi.price_inr
+            LIMIT ?
+            """,
+            (limit,)
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"[Entities] Popular items lookup failed: {e}")
+        return []
+
+
 def resolve_flights_by_destination(destination: str, direction: str = None) -> list[dict]:
     """Return flights to/from a destination city or IATA code."""
     if not destination:

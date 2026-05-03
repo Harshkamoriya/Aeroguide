@@ -1,1 +1,16 @@
 # files to ignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+# IDE specific files
+.vscode/
+.idea/
+# Logs and databases
+*.log
+*.db
+# Ignore the entities database
+nlu/entities.db

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AeroGuide - Skylight International Airport</title>
+    <!-- Modern Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="glass-header">
+            <div class="logo-area">
+                <i class="fa-solid fa-plane-departure logo-icon"></i>
+                <div class="titles">
+                    <h1>AeroGuide</h1>
+                    <p>Skylight International Airport</p>
+                </div>
+            </div>
+            <div class="status-indicator">
+                <span class="dot online"></span>
+                <span>Online</span>
+            </div>
+        </header>
+
+        <!-- Chat Area -->
+        <main class="chat-container" id="chat-container">
+            <!-- Messages will be injected here dynamically -->
+            <div class="message agent-message">
+                <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="bubble glass-bubble">
+                    <p>Welcome to Skylight International Airport! I'm AeroGuide. How can I help you today?</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Controls Area -->
+        <footer class="controls-area glass-footer">
+            <!-- Text Input (Fallback) -->
+            <form id="text-form" class="text-input-form">
+                <input type="text" id="text-input" placeholder="Type or tap the mic to speak..." autocomplete="off">
+                <button type="submit" id="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+            </form>
+
+            <!-- Voice Control -->
+            <div class="voice-controls">
+                <button id="mic-btn" class="mic-button">
+                    <i class="fa-solid fa-microphone"></i>
+                </button>
+                <p id="mic-status">Tap to speak</p>
+            </div>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -176,7 +176,12 @@ class AeroGuide:
         terminal      = entities.get("terminal") or memory.terminal
         destination   = entities.get("destination")
 
-        if intent == "flight_status":
+        if intent == "greeting":
+            # Give an overview so the agent can mention what's available
+            results["restaurants"] = self._all_restaurants(terminal)[:6]
+            results["popular_items"] = ent.resolve_popular_items(8)
+
+        elif intent == "flight_status":
             if flight_number:
                 rows = ent.resolve_flight(flight_number)
                 if rows:
@@ -193,7 +198,9 @@ class AeroGuide:
             elif food_item:
                 results["menu_search"] = ent.resolve_food_item(food_item)
             else:
-                results["restaurants"] = self._all_restaurants(terminal)
+                # Generic food query — give restaurants + popular affordable items
+                results["restaurants"]   = self._all_restaurants(terminal)[:10]
+                results["popular_items"] = ent.resolve_popular_items(12)
 
         elif intent == "shop_query":
             if brand_name:
@@ -217,12 +224,19 @@ class AeroGuide:
                 results["facilities"] = ent.resolve_facility(facility_type, terminal)
             if brand_name:
                 results["restaurants"] = ent.resolve_restaurant(brand_name, terminal)
+            # Navigation with just a brand name (no gate/facility) — still useful
+            if not gate_code and not facility_type and not brand_name:
+                results["facilities"] = ent.resolve_facility("restroom", terminal)
 
         elif intent == "service_info":
             if facility_type:
                 results["facilities"] = ent.resolve_facility(facility_type, terminal)
             else:
-                results["facilities"] = ent.resolve_facility("ATM", terminal)
+                # Return a mix of common services
+                results["facilities"] = (
+                    ent.resolve_facility("ATM", terminal) +
+                    ent.resolve_facility("Currency Exchange", terminal)[:2]
+                )
 
         elif intent == "transport_info":
             results["parking"] = ent.resolve_parking(terminal)
@@ -376,6 +390,14 @@ class AeroGuide:
                 lines.append(
                     f"Menu item: {m['item_name']} {veg} — {m['price_inr']} rupees | "
                     f"at {m['brand_name']} | Category: {m.get('category','?')}"
+                )
+
+        if "popular_items" in db_results:
+            for m in db_results["popular_items"][:8]:
+                veg = "(veg)" if m.get("is_vegetarian") else "(non-veg)"
+                lines.append(
+                    f"Popular: {m['item_name']} {veg} — {m['price_inr']} rupees "
+                    f"at {m['brand_name']} ({m.get('terminal_code','?')} {m.get('floor_code','?')})"
                 )
 
         if "menu_search" in db_results:
