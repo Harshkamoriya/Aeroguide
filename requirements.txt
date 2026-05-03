@@ -1,0 +1,30 @@
+# AeroGuide — Airport AI Companion
+# Fully offline — no cloud API keys required.
+#
+# Install:  pip install -r requirements.txt
+# Ollama:   https://ollama.com  →  ollama pull llama3.2
+
+# Web server
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# Offline LLM (via Ollama local server)
+requests>=2.31.0
+
+# Offline STT — local Whisper
+openai-whisper>=20231117
+soundfile>=0.12.1
+librosa>=0.10.1
+numpy>=1.24.0
+
+# Offline TTS — OS built-in voices
+pyttsx3>=2.90
+
+# Audio I/O (for speech.py client)
+sounddevice>=0.4.6
+
+# Database
+# sqlite3 is in Python standard library — no extra install needed
+
+# Utilities
+python-dotenv>=1.0.0
