@@ -145,9 +145,10 @@ AIRLINE_ALIASES = {
 
 
 def _db_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return _CONN
+
+_CONN = sqlite3.connect(DB_PATH, check_same_thread=False)
+_CONN.row_factory = sqlite3.Row
 
 
 # ── Public resolution functions ────────────────────────────────────────────
@@ -179,7 +180,6 @@ def resolve_flight(raw: str) -> Optional[dict]:
             """,
             (normalised,)
         ).fetchall()
-        conn.close()
         return [dict(r) for r in rows] if rows else None
     except Exception as e:
         logger.error(f"[Entities] Flight lookup failed: {e}")
@@ -219,7 +219,6 @@ def resolve_restaurant(brand_raw: str, terminal: str = None) -> list[dict]:
                 params.append(t_code)
         q += " ORDER BY t.code, r.restaurant_id"
         rows = conn.execute(q, params).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Restaurant lookup failed: {e}")
@@ -259,7 +258,6 @@ def resolve_menu(brand_raw: str, food_item: str = None) -> list[dict]:
             """,
             params
         ).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Menu lookup failed: {e}")
@@ -291,7 +289,6 @@ def resolve_food_item(food_item: str) -> list[dict]:
             """,
             (f"%{food_item}%", f"%{food_item}%")
         ).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Food item lookup failed: {e}")
@@ -319,7 +316,6 @@ def resolve_gate(gate_code: str) -> Optional[dict]:
             """,
             (code,)
         ).fetchone()
-        conn.close()
         return dict(row) if row else None
     except Exception as e:
         logger.error(f"[Entities] Gate lookup failed: {e}")
@@ -376,7 +372,6 @@ def resolve_facility(facility_type: str, terminal: str = None) -> list[dict]:
             rr_rows = conn.execute(rr_q, rr_params).fetchall()
             results.extend({"kind": "restroom", **dict(r)} for r in rr_rows)
 
-        conn.close()
     except Exception as e:
         logger.error(f"[Entities] Facility lookup failed: {e}")
 
@@ -413,7 +408,6 @@ def resolve_lounge(terminal: str = None, tier: str = None) -> list[dict]:
             """,
             params
         ).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Lounge lookup failed: {e}")
@@ -447,7 +441,6 @@ def resolve_checkin(terminal: str = None) -> list[dict]:
             """,
             params
         ).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Check-in lookup failed: {e}")
@@ -495,7 +488,6 @@ def resolve_baggage_belt(flight_number: str = None, terminal: str = None) -> lis
             rows = conn.execute(q, params).fetchall()
             results.extend(dict(r) for r in rows)
 
-        conn.close()
         return results
     except Exception as e:
         logger.error(f"[Entities] Baggage belt lookup failed: {e}")
@@ -515,7 +507,6 @@ def resolve_parking(terminal: str = None) -> list[dict]:
                 params.append(tc)
         q += " ORDER BY p.rate_inr_hr"
         rows = conn.execute(q, params).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Parking lookup failed: {e}")
@@ -544,7 +535,6 @@ def resolve_popular_items(limit: int = 15) -> list[dict]:
             """,
             (limit,)
         ).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Popular items lookup failed: {e}")
@@ -575,10 +565,127 @@ def resolve_flights_by_destination(destination: str, direction: str = None) -> l
             params.append(direction.upper())
         q += " ORDER BY fs.scheduled_time LIMIT 10"
         rows = conn.execute(q, params).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"[Entities] Flight-by-dest lookup failed: {e}")
+        return []
+
+
+def resolve_transport(terminal: str = None) -> list[dict]:
+    """Return ground transport options: taxi stands, car rentals, transport nodes."""
+    try:
+        conn = _db_conn()
+        results: list[dict] = []
+
+        # Taxi stands
+        params: list = []
+        q = """
+            SELECT ts.code, ts.stand_type, ts.capacity,
+                   f.floor_code, t.code AS terminal_code
+            FROM taxi_stands ts
+            JOIN terminals t ON ts.terminal_id = t.terminal_id
+            JOIN floors    f ON ts.floor_id    = f.floor_id
+        """
+        if terminal:
+            tc = _normalise_terminal(terminal)
+            if tc:
+                q += " WHERE t.code = ?"
+                params.append(tc)
+        rows = conn.execute(q, params).fetchall()
+        results.extend({"kind": "taxi", **dict(r)} for r in rows)
+
+        # Transport nodes (bus, metro, auto, shuttle)
+        params2: list = []
+        q2 = """
+            SELECT tn.code, tn.node_type, tn.connects_to,
+                   f.floor_code, t.code AS terminal_code
+            FROM transport_nodes tn
+            JOIN terminals t ON tn.terminal_id = t.terminal_id
+            JOIN floors    f ON tn.floor_id    = f.floor_id
+        """
+        if terminal:
+            tc = _normalise_terminal(terminal)
+            if tc:
+                q2 += " WHERE t.code = ?"
+                params2.append(tc)
+        q2 += " ORDER BY tn.node_type"
+        rows2 = conn.execute(q2, params2).fetchall()
+        results.extend({"kind": "transport", **dict(r)} for r in rows2)
+
+        # Car rentals
+        params3: list = []
+        q3 = """
+            SELECT cr.operator, cr.open_time, cr.close_time,
+                   f.floor_code, t.code AS terminal_code
+            FROM car_rental_desks cr
+            JOIN terminals t ON cr.terminal_id = t.terminal_id
+            JOIN floors    f ON cr.floor_id    = f.floor_id
+        """
+        if terminal:
+            tc = _normalise_terminal(terminal)
+            if tc:
+                q3 += " WHERE t.code = ?"
+                params3.append(tc)
+        q3 += " ORDER BY cr.operator"
+        rows3 = conn.execute(q3, params3).fetchall()
+        results.extend({"kind": "car_rental", **dict(r)} for r in rows3)
+
+        return results
+    except Exception as e:
+        logger.error(f"[Entities] Transport lookup failed: {e}")
+        return []
+
+
+def resolve_charging_stations(terminal: str = None) -> list[dict]:
+    """Return charging station locations."""
+    try:
+        conn = _db_conn()
+        params: list = []
+        q = """
+            SELECT cs.code, cs.power_type, cs.outlets,
+                   f.floor_code, f.floor_name,
+                   t.code AS terminal_code
+            FROM charging_stations cs
+            JOIN floors    f ON cs.floor_id    = f.floor_id
+            JOIN terminals t ON f.terminal_id  = t.terminal_id
+        """
+        if terminal:
+            tc = _normalise_terminal(terminal)
+            if tc:
+                q += " WHERE t.code = ?"
+                params.append(tc)
+        q += " ORDER BY t.code, f.floor_level LIMIT 12"
+        rows = conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"[Entities] Charging station lookup failed: {e}")
+        return []
+
+
+def resolve_wifi(terminal: str = None) -> list[dict]:
+    """Return Wi-Fi zone info for wayfinding."""
+    try:
+        conn = _db_conn()
+        params: list = []
+        q = """
+            SELECT wz.ssid, wz.speed_mbps, wz.is_free,
+                   f.floor_code, f.floor_name,
+                   t.code AS terminal_code
+            FROM wifi_zones wz
+            JOIN floors    f ON wz.floor_id    = f.floor_id
+            JOIN terminals t ON f.terminal_id  = t.terminal_id
+            WHERE wz.is_free = 1
+        """
+        if terminal:
+            tc = _normalise_terminal(terminal)
+            if tc:
+                q += " AND t.code = ?"
+                params.append(tc)
+        q += " ORDER BY t.code, f.floor_level"
+        rows = conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"[Entities] Wi-Fi lookup failed: {e}")
         return []
 
 

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AeroGuide Admin — Skylight International Airport</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="config.js"></script>
+    <style>
+        :root {
+            --bg:        #05080F;
+            --surface:   #0B1221;
+            --surface2:  #111A2E;
+            --surface3:  #162238;
+            --border:    rgba(196, 162, 96, 0.18);
+            --border-dim:rgba(196, 162, 96, 0.08);
+            --gold:      #C4A260;
+            --gold-light:#DEB96D;
+            --gold-dim:  rgba(196, 162, 96, 0.12);
+            --text:      #EDE6D2;
+            --text-dim:  #A8B4C8;
+            --muted:     #5C6B82;
+            --success:   #4DB87A;
+            --error:     #D95F5F;
+            --warning:   #D4913A;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* subtle grid */
+        body::before {
+            content: '';
+            position: fixed; inset: 0; pointer-events: none; z-index: 0;
+            background-image:
+                linear-gradient(rgba(196,162,96,0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(196,162,96,0.025) 1px, transparent 1px);
+            background-size: 64px 64px;
+        }
+
+        /* ── Header ──────────────────────────────────────────────── */
+        .a-header {
+            position: sticky; top: 0; z-index: 50;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border-dim);
+            padding: 0 32px;
+            display: flex; align-items: center; justify-content: space-between;
+            height: 64px;
+        }
+        .a-logo {
+            display: flex; align-items: center; gap: 12px;
+        }
+        .a-logo-box {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--gold-light), #8B6830);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--bg); font-size: 15px;
+        }
+        .a-logo-name { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+        .a-logo-name span { color: var(--gold); }
+        .a-logo-tag {
+            font-size: 10px; color: var(--muted); letter-spacing: 2px;
+            text-transform: uppercase; margin-top: 1px;
+        }
+
+        .a-header-right { display: flex; align-items: center; gap: 10px; }
+        .a-btn {
+            display: inline-flex; align-items: center; gap: 7px;
+            padding: 8px 16px; border-radius: 10px; font-size: 12px;
+            font-weight: 600; cursor: pointer; border: none;
+            font-family: inherit; letter-spacing: 0.3px; transition: all 0.2s;
+        }
+        .a-btn-ghost {
+            background: transparent;
+            border: 1px solid var(--border-dim); color: var(--text-dim);
+        }
+        .a-btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
+        .a-btn-gold {
+            background: linear-gradient(135deg, var(--gold-light), #8B6830);
+            color: var(--bg);
+        }
+        .a-btn-gold:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(196,162,96,0.3); }
+        .a-btn-red { background: rgba(217,95,95,0.15); border: 1px solid rgba(217,95,95,0.3); color: var(--error); }
+        .a-btn-red:hover { background: rgba(217,95,95,0.25); }
+        .back-link {
+            display: flex; align-items: center; gap: 7px;
+            color: var(--muted); text-decoration: none;
+            font-size: 12px; font-weight: 500;
+            padding: 8px 14px; border-radius: 10px;
+            border: 1px solid var(--border-dim); transition: all 0.2s;
+        }
+        .back-link:hover { color: var(--text); border-color: var(--border); }
+
+        /* ── Key bar ──────────────────────────────────────────────── */
+        .key-bar {
+            background: var(--surface2);
+            border-bottom: 1px solid var(--border-dim);
+            padding: 10px 32px;
+            display: flex; align-items: center; gap: 12px;
+            font-size: 12px; color: var(--muted); position: relative; z-index: 1;
+        }
+        .key-bar i { color: var(--gold); }
+        .key-bar input {
+            background: var(--surface); border: 1px solid var(--border-dim);
+            border-radius: 8px; padding: 7px 12px;
+            color: var(--text); font-size: 12px; font-family: monospace;
+            outline: none; width: 240px; transition: border 0.2s;
+        }
+        .key-bar input:focus { border-color: var(--gold); }
+
+        /* ── Main ────────────────────────────────────────────────── */
+        .a-main {
+            max-width: 1120px; margin: 0 auto;
+            padding: 32px 24px;
+            position: relative; z-index: 1;
+        }
+
+        /* ── Stats ───────────────────────────────────────────────── */
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+            margin-bottom: 32px;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 16px; padding: 22px 24px;
+        }
+        .stat-icon {
+            width: 36px; height: 36px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px; margin-bottom: 14px;
+        }
+        .stat-icon.gold   { background: var(--gold-dim); color: var(--gold); }
+        .stat-icon.green  { background: rgba(77,184,122,0.1); color: var(--success); }
+        .stat-icon.orange { background: rgba(212,145,58,0.1); color: var(--warning); }
+        .stat-icon.red    { background: rgba(217,95,95,0.1); color: var(--error); }
+        .stat-num { font-size: 34px; font-weight: 700; margin-bottom: 4px; }
+        .stat-num.gold   { color: var(--gold); }
+        .stat-num.green  { color: var(--success); }
+        .stat-num.orange { color: var(--warning); }
+        .stat-num.red    { color: var(--error); }
+        .stat-lbl { font-size: 12px; color: var(--muted); }
+
+        /* ── Section header ───────────────────────────────────────── */
+        .sec-hdr {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .sec-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .sec-title i { color: var(--gold); }
+        .refresh-ts { font-size: 11px; color: var(--muted); }
+
+        /* ── Flight cards ─────────────────────────────────────────── */
+        .flights-list { display: flex; flex-direction: column; gap: 10px; }
+
+        .flight-card {
+            background: var(--surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 16px; overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .flight-card:hover { border-color: var(--border); }
+
+        .flight-row {
+            display: flex; align-items: center; gap: 16px;
+            padding: 18px 22px; cursor: pointer;
+        }
+        .flight-num {
+            font-size: 17px; font-weight: 700;
+            color: var(--gold); min-width: 78px; letter-spacing: 0.5px;
+        }
+        .flight-meta {
+            flex: 1; display: flex; gap: 28px; flex-wrap: wrap;
+        }
+        .fmeta { font-size: 13px; }
+        .fmeta-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+
+        .pax-pill {
+            background: var(--gold-dim); border: 1px solid var(--border);
+            color: var(--gold); border-radius: 20px; padding: 4px 12px;
+            font-size: 12px; font-weight: 600; white-space: nowrap;
+        }
+
+        .chevron { color: var(--muted); font-size: 12px; transition: transform 0.2s; margin-left: 4px; }
+        .flight-card.open .chevron { transform: rotate(180deg); }
+
+        /* Users panel */
+        .users-panel {
+            display: none;
+            border-top: 1px solid var(--border-dim);
+        }
+        .flight-card.open .users-panel { display: block; }
+
+        .utbl { width: 100%; border-collapse: collapse; }
+        .utbl th {
+            text-align: left; padding: 11px 22px;
+            font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+            text-transform: uppercase; color: var(--muted);
+            background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid var(--border-dim);
+        }
+        .utbl td {
+            padding: 13px 22px; font-size: 13px;
+            border-bottom: 1px solid var(--border-dim);
+        }
+        .utbl tr:last-child td { border-bottom: none; }
+        .utbl tr:hover td { background: rgba(196,162,96,0.02); }
+
+        .badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 3px 10px; border-radius: 20px;
+            font-size: 11px; font-weight: 600;
+        }
+        .badge-pending { background: rgba(212,145,58,0.12); color: var(--warning); }
+        .badge-called  { background: rgba(77,184,122,0.12); color: var(--success); }
+        .badge-failed  { background: rgba(217,95,95,0.12);  color: var(--error);   }
+
+        /* ── Terminal Change Modal ────────────────────────────────── */
+        .modal-bg {
+            position: fixed; inset: 0;
+            background: rgba(5,8,15,0.88);
+            backdrop-filter: blur(16px);
+            display: none; align-items: center; justify-content: center;
+            z-index: 200; padding: 20px;
+        }
+        .modal-bg.open { display: flex; }
+
+        .modal-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 24px; padding: 36px;
+            width: 100%; max-width: 460px;
+            box-shadow: 0 48px 120px rgba(0,0,0,0.7);
+            animation: modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: none; }
+        }
+
+        .modal-icon {
+            width: 48px; height: 48px; border-radius: 14px;
+            background: rgba(212,145,58,0.12); border: 1px solid rgba(212,145,58,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; color: var(--warning); margin-bottom: 18px;
+        }
+        .modal-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+        .modal-card p  { font-size: 13px; color: var(--text-dim); margin-bottom: 26px; line-height: 1.6; }
+
+        .mform-field { margin-bottom: 18px; }
+        .mform-field label {
+            display: block; font-size: 10px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1.5px;
+            color: var(--muted); margin-bottom: 8px;
+        }
+        .mform-field select, .mform-field input {
+            width: 100%; padding: 12px 14px;
+            background: var(--surface2); border: 1px solid var(--border-dim);
+            border-radius: 11px; color: var(--text); font-size: 14px;
+            font-family: inherit; outline: none; transition: border 0.2s;
+        }
+        .mform-field select:focus, .mform-field input:focus { border-color: var(--gold); }
+        .mform-field select option { background: var(--surface2); }
+        .mform-field input::placeholder { color: var(--muted); }
+
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+        /* ── Toasts ───────────────────────────────────────────────── */
+        .toast-wrap {
+            position: fixed; bottom: 24px; right: 24px;
+            display: flex; flex-direction: column; gap: 8px;
+            z-index: 300;
+        }
+        .toast {
+            background: var(--surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 12px; padding: 14px 18px;
+            min-width: 270px; font-size: 13px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+            animation: toastIn 0.3s ease;
+            transition: opacity 0.4s;
+        }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to   { opacity: 1; transform: none; }
+        }
+        .toast.ok   { border-left: 3px solid var(--success); }
+        .toast.err  { border-left: 3px solid var(--error); }
+        .toast.info { border-left: 3px solid var(--gold); }
+        .toast-ttl  { font-weight: 600; margin-bottom: 3px; }
+        .toast-msg  { color: var(--muted); font-size: 12px; }
+
+        /* ── Empty / Loading ──────────────────────────────────────── */
+        .empty {
+            text-align: center; padding: 64px 24px;
+            color: var(--muted);
+        }
+        .empty i { font-size: 40px; opacity: 0.2; display: block; margin-bottom: 16px; }
+        .empty p { font-size: 14px; }
+        .loading { text-align: center; padding: 48px; color: var(--muted); font-size: 14px; }
+
+        @media (max-width: 700px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .flight-meta { gap: 14px; }
+            .a-header, .key-bar, .a-main { padding-left: 16px; padding-right: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="a-header">
+    <div class="a-logo">
+        <div class="a-logo-box"><i class="fa-solid fa-plane-departure"></i></div>
+        <div>
+            <div class="a-logo-name">AERO<span>GUIDE</span></div>
+            <div class="a-logo-tag">Admin Panel</div>
+        </div>
+    </div>
+    <div class="a-header-right">
+        <button class="a-btn a-btn-ghost" onclick="loadData()">
+            <i class="fa-solid fa-rotate-right"></i> Refresh
+        </button>
+        <a href="index.html" class="back-link">
+            <i class="fa-solid fa-arrow-left"></i> Back to App
+        </a>
+    </div>
+</header>
+
+<!-- ── Key Bar ── -->
+<div class="key-bar">
+    <i class="fa-solid fa-key"></i>
+    <span>Admin Key</span>
+    <input type="password" id="admin-key" value="aeroguide2024" placeholder="Enter admin key">
+    <button class="a-btn a-btn-ghost" onclick="loadData()" style="padding:6px 12px;font-size:11px">
+        <i class="fa-solid fa-check"></i> Apply
+    </button>
+</div>
+
+<!-- ── Main ── -->
+<div class="a-main">
+
+    <!-- Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon gold"><i class="fa-solid fa-users"></i></div>
+            <div class="stat-num gold" id="s-total">—</div>
+            <div class="stat-lbl">Total Registered</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon green"><i class="fa-solid fa-phone-check"></i></div>
+            <div class="stat-num green" id="s-called">—</div>
+            <div class="stat-lbl">Calls Made</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon orange"><i class="fa-solid fa-clock"></i></div>
+            <div class="stat-num orange" id="s-pending">—</div>
+            <div class="stat-lbl">Pending Calls</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon red"><i class="fa-solid fa-phone-slash"></i></div>
+            <div class="stat-num red" id="s-failed">—</div>
+            <div class="stat-lbl">Failed</div>
+        </div>
+    </div>
+
+    <!-- Flights -->
+    <div class="sec-hdr">
+        <div class="sec-title"><i class="fa-solid fa-plane"></i> Registered Flights &amp; Passengers</div>
+        <span class="refresh-ts" id="last-ts"></span>
+    </div>
+    <div class="flights-list" id="flights-list">
+        <div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>
+    </div>
+</div>
+
+<!-- ── Terminal Change Modal ── -->
+<div class="modal-bg" id="modal-bg">
+    <div class="modal-card">
+        <div class="modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <h3>Terminal Change Alert</h3>
+        <p id="modal-desc">An urgent call will be sent to all passengers registered for this flight.</p>
+        <input type="hidden" id="m-flight">
+        <input type="hidden" id="m-dest">
+        <div class="mform-field">
+            <label>New Terminal</label>
+            <select id="m-terminal">
+                <option value="T1">T1 — Domestic</option>
+                <option value="T2">T2 — International</option>
+            </select>
+        </div>
+        <div class="mform-field">
+            <label>New Gate <span style="opacity:.5;font-weight:400">(optional)</span></label>
+            <input type="text" id="m-gate" placeholder="e.g. B12" style="text-transform:uppercase">
+        </div>
+        <div class="modal-actions">
+            <button class="a-btn a-btn-ghost" onclick="closeModal()">Cancel</button>
+            <button class="a-btn a-btn-red" onclick="sendTerminalChange()">
+                <i class="fa-solid fa-phone-volume"></i> Call All Passengers
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Toasts ── -->
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+function api() { return typeof BACKEND_URL !== 'undefined' ? BACKEND_URL : window.location.origin; }
+function key()  { return document.getElementById('admin-key').value.trim() || 'aeroguide2024'; }
+
+// ── Load Data ─────────────────────────────────────────────────────────────────
+async function loadData() {
+    document.getElementById('flights-list').innerHTML =
+        '<div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>';
+    try {
+        const res = await fetch(`${api()}/admin/users?admin_key=${encodeURIComponent(key())}`);
+        if (res.status === 403) {
+            toast('Access Denied', 'Invalid admin key.', 'err');
+            document.getElementById('flights-list').innerHTML =
+                '<div class="empty"><i class="fa-solid fa-lock"></i><p>Invalid admin key</p></div>';
+            return;
+        }
+        const { flights, stats } = await res.json();
+        renderStats(stats);
+        renderFlights(flights);
+        document.getElementById('last-ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch {
+        document.getElementById('flights-list').innerHTML =
+            '<div class="empty"><i class="fa-solid fa-wifi"></i><p>Cannot reach backend server</p></div>';
+    }
+}
+
+function renderStats(s) {
+    document.getElementById('s-total').textContent   = s.total_users;
+    document.getElementById('s-called').textContent  = s.calls_made;
+    document.getElementById('s-pending').textContent = s.calls_pending;
+    document.getElementById('s-failed').textContent  = s.calls_failed;
+}
+
+function renderFlights(flights) {
+    const list = document.getElementById('flights-list');
+    if (!flights.length) {
+        list.innerHTML = '<div class="empty"><i class="fa-solid fa-users"></i><p>No registered passengers yet</p></div>';
+        return;
+    }
+    list.innerHTML = '';
+    flights.forEach(f => {
+        const card = document.createElement('div');
+        card.className = 'flight-card';
+        const userRows = f.users.map((u, i) => `
+            <tr>
+                <td style="color:var(--muted);font-size:12px">${i+1}</td>
+                <td><strong>${u.name}</strong></td>
+                <td style="font-family:monospace;font-size:12px;color:var(--text-dim)">${maskNum(u.mobile_number)}</td>
+                <td style="color:var(--muted);font-size:12px">${fmtDt(u.registered_at)}</td>
+                <td>${badgeHtml(u.call_sent)}</td>
+            </tr>`).join('');
+        card.innerHTML = `
+            <div class="flight-row" onclick="toggle(this.parentElement)">
+                <div class="flight-num">${f.flight_number}</div>
+                <div class="flight-meta">
+                    <div class="fmeta"><div class="fmeta-lbl">Destination</div>${f.destination || '—'}</div>
+                    <div class="fmeta"><div class="fmeta-lbl">Terminal</div>${f.terminal || '—'}</div>
+                    <div class="fmeta"><div class="fmeta-lbl">Gate</div>${f.gate_code || '—'}</div>
+                    <div class="fmeta"><div class="fmeta-lbl">Departs</div>${f.departure_time ? f.departure_time.substring(0,5) : '—'}</div>
+                </div>
+                <span class="pax-pill"><i class="fa-solid fa-users" style="font-size:10px"></i> ${f.user_count}</span>
+                <button class="a-btn a-btn-red" onclick="event.stopPropagation();openModal('${f.flight_number}','${f.destination||''}','${f.terminal||'T1'}')">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Change Terminal
+                </button>
+                <i class="fa-solid fa-chevron-down chevron"></i>
+            </div>
+            <div class="users-panel">
+                <table class="utbl">
+                    <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Registered</th><th>Call Status</th></tr></thead>
+                    <tbody>${userRows}</tbody>
+                </table>
+            </div>`;
+        list.appendChild(card);
+    });
+}
+
+function toggle(card) { card.classList.toggle('open'); }
+
+function maskNum(n) {
+    if (!n) return '—';
+    return n.slice(0, 3) + n.slice(3, -4).replace(/./g, '•') + n.slice(-4);
+}
+function fmtDt(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? iso : d.toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+function badgeHtml(s) {
+    if (s === 1) return '<span class="badge badge-called"><i class="fa-solid fa-check"></i> Called</span>';
+    if (s === 2) return '<span class="badge badge-failed"><i class="fa-solid fa-xmark"></i> Failed</span>';
+    return '<span class="badge badge-pending"><i class="fa-regular fa-clock"></i> Pending</span>';
+}
+
+// ── Terminal Change ────────────────────────────────────────────────────────────
+function openModal(fn, dest, curT) {
+    document.getElementById('m-flight').value    = fn;
+    document.getElementById('m-dest').value      = dest;
+    document.getElementById('m-terminal').value  = curT === 'T1' ? 'T2' : 'T1';
+    document.getElementById('m-gate').value      = '';
+    document.getElementById('modal-desc').textContent =
+        `Flight ${fn} to ${dest || 'destination'} — all registered passengers will receive an urgent call.`;
+    document.getElementById('modal-bg').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-bg').classList.remove('open'); }
+
+async function sendTerminalChange() {
+    const fn  = document.getElementById('m-flight').value;
+    const nt  = document.getElementById('m-terminal').value;
+    const ng  = document.getElementById('m-gate').value.toUpperCase().trim() || null;
+    closeModal();
+    toast('Calling Passengers', `Sending terminal change alert for ${fn}...`, 'info');
+    try {
+        const res  = await fetch(`${api()}/admin/terminal-change`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ flight_number: fn, new_terminal: nt, new_gate: ng, admin_key: key() })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Request failed');
+        toast(
+            `${data.calls_triggered} Call${data.calls_triggered !== 1 ? 's' : ''} Triggered`,
+            `Terminal → ${nt}${ng ? ', Gate ' + ng : ''} for flight ${fn}`,
+            data.calls_triggered > 0 ? 'ok' : 'err'
+        );
+        setTimeout(loadData, 3000);
+    } catch (e) { toast('Error', e.message, 'err'); }
+}
+
+// ── Toasts ────────────────────────────────────────────────────────────────────
+function toast(title, msg, type = 'info') {
+    const wrap = document.getElementById('toasts');
+    const el   = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<div class="toast-ttl">${title}</div><div class="toast-msg">${msg}</div>`;
+    wrap.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; }, 4200);
+    setTimeout(() => el.remove(), 4700);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('modal-bg').addEventListener('click', e => { if (e.target.id === 'modal-bg') closeModal(); });
+loadData();
+setInterval(loadData, 15000);
+</script>
+</body>
+</html>

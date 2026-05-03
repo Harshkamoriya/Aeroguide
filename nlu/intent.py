@@ -7,7 +7,6 @@ import os
 import re
 import json
 import logging
-import time
 import requests
 
 load_dotenv = __import__('dotenv').load_dotenv
@@ -17,8 +16,8 @@ from agent.prompt import INTENT_SYSTEM_PROMPT, INTENT_USER_PROMPT
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 
 HISTORY_WINDOW = 10
 
@@ -78,7 +77,7 @@ class IntentClassifier:
         self.model    = model or OLLAMA_MODEL
         self._history: list[dict] = []
 
-    def classify(self, transcript: str, retries: int = 2, backoff: float = 1.5) -> dict:
+    def classify(self, transcript: str, retries: int = 2) -> dict:
         if not transcript.strip():
             return self._empty()
 
@@ -90,16 +89,17 @@ class IntentClassifier:
                 resp = requests.post(
                     f"{OLLAMA_URL}/api/chat",
                     json={
-                        "model":   self.model,
+                        "model":      self.model,
+                        "keep_alive": -1,
                         "messages": [
                             {"role": "system", "content": INTENT_SYSTEM_PROMPT},
                             {"role": "user",   "content": prompt},
                         ],
                         "format": "json",
                         "stream": False,
-                        "options": {"temperature": 0.1, "num_predict": 250},
+                        "options": {"temperature": 0.1, "num_predict": 80},
                     },
-                    timeout=30,
+                    timeout=(5, 120),
                 )
                 resp.raise_for_status()
                 content = resp.json()["message"]["content"]
@@ -126,7 +126,6 @@ class IntentClassifier:
             except (requests.ConnectionError, requests.Timeout):
                 if attempt < retries:
                     logger.warning(f"[NLU] Ollama unreachable, retry {attempt}/{retries}")
-                    time.sleep(backoff * attempt)
                 else:
                     logger.warning("[NLU] Ollama unavailable — using keyword fallback")
                     return self._keyword_fallback(transcript)
@@ -234,6 +233,20 @@ class IntentClassifier:
                                   "pick up", "drop off", "pickup"]):
             return self._make("transport_info", 0.85, entities)
 
+        nav_words_strong = ["how to get", "direction", "navigate", "which way", "how do i go"]
+        nav_words_weak = ["where", "find", "locate", "kahan", "show me"]
+
+        is_navigation = False
+        if entities["gate_code"]:
+            is_navigation = True
+        elif any(w in t for w in nav_words_strong):
+            is_navigation = True
+        elif any(w in t for w in nav_words_weak) and (entities["brand_name"] or entities["facility_type"]):
+            is_navigation = True
+
+        if is_navigation:
+            return self._make("navigation", 0.85, entities)
+
         if entities["facility_type"] or any(w in t for w in [
             "atm", "cash", "prayer", "toilet", "restroom", "loo",
             "smoking", "medical", "doctor", "wifi", "wi-fi",
@@ -251,11 +264,6 @@ class IntentClassifier:
         if any(w in t for w in ["shop", "store", "buy", "duty free", "dutyfree",
                                   "luxury", "retail", "gucci", "fashion", "brand"]):
             return self._make("shop_query", 0.82, entities)
-
-        nav_words = ["where", "how to get", "direction", "navigate", "find",
-                     "locate", "kahan", "show me", "which way", "how do i go"]
-        if entities["gate_code"] or any(w in t for w in nav_words):
-            return self._make("navigation", 0.8, entities)
 
         if any(w in t for w in ["suggest", "recommend", "best", "which is good",
                                   "what should", "help me choose", "what do you",

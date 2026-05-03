@@ -1,16 +1,28 @@
-# files to ignore
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+
+# Virtual environments
 env/
+env_new/
 venv/
-# IDE specific files
+.venv/
+
+# Environment variables (contains secrets!)
+.env
+
+# IDE
 .vscode/
 .idea/
+
 # Logs and databases
 *.log
 *.db
-# Ignore the entities database
 nlu/entities.db
+
+# OS
+.DS_Store
+Thumbs.db

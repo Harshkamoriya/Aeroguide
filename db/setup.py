@@ -60,10 +60,44 @@ def init_db(blueprint_path: str = BLUEPRINT, db_path: str = DB_PATH) -> None:
         CREATE INDEX IF NOT EXISTS idx_menu_brand ON menu_items(brand_id);
     """)
     conn.commit()
+
+    _add_users_table(conn)
+
     conn.close()
     logger.info("Session tables created. Database ready.")
 
 
+def _add_users_table(conn: sqlite3.Connection) -> None:
+    """Add users table for Twilio flight-departure calling."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT    NOT NULL,
+            mobile_number  TEXT    NOT NULL,
+            flight_number  TEXT    NOT NULL,
+            session_id     TEXT,
+            call_sent      INTEGER DEFAULT 0,
+            registered_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_users_flight ON users(flight_number);
+    """)
+    conn.commit()
+    logger.info("Users table ready.")
+
+
+def migrate(db_path: str = DB_PATH) -> None:
+    """Add users table to an existing airport.db without recreating it."""
+    conn = sqlite3.connect(db_path)
+    _add_users_table(conn)
+    conn.close()
+    logger.info(f"[Migrate] users table ensured in {db_path}")
+
+
 if __name__ == "__main__":
-    init_db()
-    print(f"✓ airport.db initialised at {DB_PATH}")
+    import sys
+    if "--migrate" in sys.argv:
+        migrate()
+        print(f"[OK] Migration done: {DB_PATH}")
+    else:
+        init_db()
+        print(f"[OK] airport.db initialised at {DB_PATH}")

@@ -24,17 +24,23 @@ WebSocket:
 """
 
 import os
+import time
 import uuid
 import logging
+import threading
+import requests as _requests
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from typing import Optional
 from pydantic import BaseModel
 
 load_dotenv = __import__('dotenv').load_dotenv
 load_dotenv(override=False)
+
+ADMIN_KEY = os.getenv("ADMIN_KEY", "aeroguide2024")
 
 from agent.skynet import AeroGuide
 from db.session_manager import SessionManager
@@ -49,6 +55,28 @@ logger = logging.getLogger(__name__)
 app   = FastAPI(title="AeroGuide — Airport AI Companion", version="1.0.0")
 agent = AeroGuide()
 sdb   = SessionManager()
+
+def _warmup_ollama():
+    """Load llama3.2 into RAM in the background so the first user message is fast."""
+    ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+    model      = os.getenv("OLLAMA_MODEL", "llama3.2")
+    try:
+        logger.info("[Warmup] Loading Ollama model into RAM...")
+        _requests.post(
+            f"{ollama_url}/api/chat",
+            json={
+                "model":   model,
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream":  False,
+                "options": {"num_predict": 1},
+            },
+            timeout=(5, 120),
+        )
+        logger.info("[Warmup] Ollama model ready.")
+    except Exception as e:
+        logger.warning(f"[Warmup] Could not pre-load model: {e}")
+
+threading.Thread(target=_warmup_ollama, daemon=True).start()
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +115,20 @@ class SynthRequest(BaseModel):
 class FullRequest(BaseModel):
     text: str
     session_id: str = "__cli__"
+    user_lat: Optional[float] = None
+    user_lng: Optional[float] = None
+
+class RegisterRequest(BaseModel):
+    name: str
+    mobile_number: str   # E.164 format, e.g. +919876543210
+    flight_number: str
+    session_id: Optional[str] = None
+
+class TerminalChangeRequest(BaseModel):
+    flight_number: str
+    new_terminal:  str
+    new_gate:      Optional[str] = None
+    admin_key:     str = "aeroguide2024"
 
 
 # ── Session endpoints ──────────────────────────────────────────────────────
@@ -288,8 +330,13 @@ def test_full(body: FullRequest):
         sdb.create(session_id)
         agent._sessions[session_id] = agent.new_session(session_id)
     session = agent._sessions[session_id]
-
-    result = agent.run_turn_text(body.text, session)
+    print("Hello")
+    result = agent.run_turn_text(
+        body.text, session,
+        user_lat=body.user_lat,
+        user_lng=body.user_lng,
+    )
+    print("Hello")
 
     turn = result["turn"]
     sdb.save_turn(session_id, turn * 2 - 1, "traveler", body.text, result["intent"])
@@ -303,9 +350,153 @@ def test_full(body: FullRequest):
         "response":    result["response"],
         "followup":    result.get("followup"),
         "map_hint":    result.get("map_hint", {}),
+        "directions":  result.get("directions"),
         "end_session": result.get("end_session", False),
         "latency_ms":  result.get("latency_ms"),
     }
+
+
+# ── User registration & Twilio calling ───────────────────────────────────
+
+@app.post("/register")
+def register_user(body: RegisterRequest):
+    """Save traveler name + mobile + flight so they get an automated departure call."""
+    number = body.mobile_number.strip()
+    if not number.startswith("+"):
+        raise HTTPException(
+            status_code=400,
+            detail="mobile_number must be in E.164 format, e.g. +919876543210",
+        )
+    flight = body.flight_number.strip().upper()
+    if not flight:
+        raise HTTPException(status_code=400, detail="flight_number cannot be empty.")
+
+    import sqlite3 as _sqlite3
+    db_path = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "db", "airport.db"))
+    conn = _sqlite3.connect(db_path)
+    try:
+        # Ensure users table exists (handles DBs created before this feature)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                name           TEXT    NOT NULL,
+                mobile_number  TEXT    NOT NULL,
+                flight_number  TEXT    NOT NULL,
+                session_id     TEXT,
+                call_sent      INTEGER DEFAULT 0,
+                registered_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute(
+            "INSERT INTO users (name, mobile_number, flight_number, session_id) VALUES (?, ?, ?, ?)",
+            (body.name.strip(), number, flight, body.session_id),
+        )
+        conn.commit()
+        user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    finally:
+        conn.close()
+
+    logger.info(f"[Register] user_id={user_id} name={body.name!r} flight={flight} mobile={number}")
+    return {
+        "status":        "registered",
+        "user_id":       user_id,
+        "name":          body.name.strip(),
+        "flight_number": flight,
+        "message":       f"You will receive a call when your flight {flight} departs in ~30 minutes.",
+    }
+
+
+def _flight_alert_loop() -> None:
+    """Background daemon: every 5 minutes, call users whose flights depart in ~30 min."""
+    import sqlite3 as _sqlite3
+    from calls.twilio_caller import make_departure_call
+
+    db_path = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "db", "airport.db"))
+
+    logger.info("[FlightAlert] Background scheduler started.")
+    while True:
+        try:
+            conn = _sqlite3.connect(db_path)
+            conn.row_factory = _sqlite3.Row
+            # Flights departing in 25–35 minutes from now (local time)
+            rows = conn.execute("""
+                SELECT
+                    u.user_id,
+                    u.name,
+                    u.mobile_number,
+                    u.flight_number,
+                    g.gate_code,
+                    t.code     AS terminal_code,
+                    r.dest_city
+                FROM users u
+                JOIN flight_schedule fs ON UPPER(fs.flight_number) = UPPER(u.flight_number)
+                JOIN gates     g  ON g.gate_id     = fs.gate_id
+                JOIN terminals t  ON t.terminal_id = fs.terminal_id
+                JOIN routes    r  ON r.route_id    = fs.route_id
+                WHERE u.call_sent = 0
+                  AND fs.direction = 'departure'
+                  AND time(fs.scheduled_time) BETWEEN
+                        time('now', '+25 minutes', 'localtime') AND
+                        time('now', '+35 minutes', 'localtime')
+            """).fetchall()
+            conn.close()
+
+            for row in rows:
+                sid = make_departure_call(
+                    to_number     = row["mobile_number"],
+                    name          = row["name"],
+                    flight_number = row["flight_number"],
+                    destination   = row["dest_city"],
+                    gate_code     = row["gate_code"],
+                    terminal      = row["terminal_code"],
+                )
+                # Mark as called (1) or failed (2)
+                status = 1 if sid else 2
+                upd = _sqlite3.connect(db_path)
+                upd.execute("UPDATE users SET call_sent = ? WHERE user_id = ?",
+                            (status, row["user_id"]))
+                upd.commit()
+                upd.close()
+                logger.info(
+                    f"[FlightAlert] user_id={row['user_id']} flight={row['flight_number']} "
+                    f"→ call_sent={status}"
+                )
+
+        except Exception as e:
+            logger.error(f"[FlightAlert] Scheduler error: {e}")
+
+        time.sleep(300)   # check every 5 minutes
+
+
+threading.Thread(target=_flight_alert_loop, daemon=True).start()
+
+
+# ── Test call endpoint ─────────────────────────────────────────────────────
+
+class TestCallRequest(BaseModel):
+    to_number:     str
+    name:          str   = "Traveler"
+    flight_number: str   = "6E211"
+    destination:   str   = "Mumbai"
+    gate_code:     str   = "A5"
+    terminal:      str   = "T1"
+
+@app.post("/test/call")
+def test_call(body: TestCallRequest):
+    """Fire an immediate Twilio test call to a verified number."""
+    from calls.twilio_caller import make_departure_call
+    sid = make_departure_call(
+        to_number     = body.to_number,
+        name          = body.name,
+        flight_number = body.flight_number,
+        destination   = body.destination,
+        gate_code     = body.gate_code,
+        terminal      = body.terminal,
+    )
+    if not sid:
+        raise HTTPException(status_code=500,
+                            detail="Call failed. Check Twilio credentials and verified numbers.")
+    return {"status": "calling", "call_sid": sid, "to": body.to_number}
 
 
 # ── Quick-lookup endpoints ─────────────────────────────────────────────────
@@ -369,6 +560,132 @@ def delayed_flights():
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "AeroGuide Airport AI Companion"}
+
+
+# ── Admin endpoints ────────────────────────────────────────────────────────
+
+def _admin_db_path():
+    return os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "db", "airport.db"))
+
+
+@app.get("/admin/users")
+def admin_users(admin_key: str = Query(...)):
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key.")
+
+    import sqlite3 as _sqlite3
+    conn = _sqlite3.connect(_admin_db_path())
+    conn.row_factory = _sqlite3.Row
+
+    users_rows = conn.execute("""
+        SELECT user_id, name, mobile_number, flight_number, call_sent, registered_at
+        FROM users ORDER BY flight_number, registered_at
+    """).fetchall()
+
+    flight_infos = {}
+    for row in users_rows:
+        fn = row["flight_number"].upper()
+        if fn not in flight_infos:
+            info = conn.execute("""
+                SELECT g.gate_code, t.code AS terminal_code, r.dest_city, fs.scheduled_time
+                FROM flight_schedule fs
+                JOIN gates     g ON g.gate_id     = fs.gate_id
+                JOIN terminals t ON t.terminal_id = fs.terminal_id
+                JOIN routes    r ON r.route_id    = fs.route_id
+                WHERE UPPER(fs.flight_number) = ? AND fs.direction = 'departure'
+                LIMIT 1
+            """, (fn,)).fetchone()
+            flight_infos[fn] = dict(info) if info else {}
+    conn.close()
+
+    flights: dict = {}
+    for row in users_rows:
+        fn  = row["flight_number"].upper()
+        inf = flight_infos.get(fn, {})
+        if fn not in flights:
+            flights[fn] = {
+                "flight_number":  fn,
+                "destination":    inf.get("dest_city")     or "Unknown",
+                "terminal":       inf.get("terminal_code") or "Unknown",
+                "gate_code":      inf.get("gate_code")     or "Unknown",
+                "departure_time": inf.get("scheduled_time") or "Unknown",
+                "users":          [],
+            }
+        flights[fn]["users"].append({
+            "user_id":       row["user_id"],
+            "name":          row["name"],
+            "mobile_number": row["mobile_number"],
+            "call_sent":     row["call_sent"],
+            "registered_at": row["registered_at"],
+        })
+
+    flights_list = list(flights.values())
+    for f in flights_list:
+        f["user_count"] = len(f["users"])
+
+    all_users = [u for f in flights_list for u in f["users"]]
+    stats = {
+        "total_users":   len(all_users),
+        "calls_made":    sum(1 for u in all_users if u["call_sent"] == 1),
+        "calls_failed":  sum(1 for u in all_users if u["call_sent"] == 2),
+        "calls_pending": sum(1 for u in all_users if u["call_sent"] == 0),
+    }
+    return {"flights": flights_list, "stats": stats}
+
+
+@app.post("/admin/terminal-change")
+def admin_terminal_change(body: TerminalChangeRequest):
+    if body.admin_key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key.")
+
+    from calls.twilio_caller import make_terminal_change_call
+    import sqlite3 as _sqlite3
+
+    conn = _sqlite3.connect(_admin_db_path())
+    conn.row_factory = _sqlite3.Row
+    flight = body.flight_number.strip().upper()
+
+    schedule = conn.execute("""
+        SELECT r.dest_city, fs.scheduled_time
+        FROM flight_schedule fs
+        LEFT JOIN routes r ON r.route_id = fs.route_id
+        WHERE UPPER(fs.flight_number) = ? AND fs.direction = 'departure'
+        LIMIT 1
+    """, (flight,)).fetchone()
+    destination = schedule["dest_city"] if schedule else "your destination"
+
+    users = conn.execute(
+        "SELECT user_id, name, mobile_number FROM users WHERE UPPER(flight_number) = ?",
+        (flight,)
+    ).fetchall()
+    conn.close()
+
+    results = []
+    for user in users:
+        sid = make_terminal_change_call(
+            to_number     = user["mobile_number"],
+            name          = user["name"],
+            flight_number = flight,
+            destination   = destination,
+            new_terminal  = body.new_terminal,
+            new_gate      = body.new_gate,
+        )
+        results.append({
+            "user_id":  user["user_id"],
+            "name":     user["name"],
+            "status":   "called" if sid else "failed",
+            "call_sid": sid,
+        })
+
+    called = sum(1 for r in results if r["status"] == "called")
+    logger.info(f"[Admin] Terminal change {flight} → {body.new_terminal}: {called}/{len(results)} called")
+    return {
+        "flight_number":   flight,
+        "new_terminal":    body.new_terminal,
+        "new_gate":        body.new_gate,
+        "calls_triggered": called,
+        "results":         results,
+    }
 
 
 # ── Entry point ────────────────────────────────────────────────────────────

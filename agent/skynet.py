@@ -23,13 +23,14 @@ load_dotenv = __import__('dotenv').load_dotenv
 load_dotenv(override=False)
 
 from agent.prompt import SYSTEM_PROMPT, RESPONSE_TEMPLATE
+from agent import navigation as nav
 from nlu.intent import IntentClassifier
 from nlu import entities as ent
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 IST          = timezone(timedelta(hours=5, minutes=30))
 
 
@@ -92,6 +93,10 @@ class ConversationMemory:
 
 # ── AeroGuide ──────────────────────────────────────────────────────────────
 
+# Intents whose responses depend on live data — never cache these
+_NO_CACHE_INTENTS = {"flight_status", "baggage_info", "checkin_help"}
+
+
 class AeroGuide:
     """Main airport AI companion agent."""
 
@@ -100,7 +105,15 @@ class AeroGuide:
         DB_PATH = os.getenv("DB_PATH", "db/airport.db")
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # Response cache: key → {"response","followup","map_hint"}
+        self._cache: dict[str, dict] = {}
         logger.info("[AeroGuide] Initialized.")
+
+    @staticmethod
+    def _cache_key(intent: str, entities: dict) -> str:
+        """Stable cache key from intent + non-null entities."""
+        relevant = {k: v for k, v in entities.items() if v}
+        return f"{intent}|{json.dumps(relevant, sort_keys=True)}"
 
     # ── Session ──────────────────────────────────────────────────────────
 
@@ -116,13 +129,15 @@ class AeroGuide:
 
     # ── Turn processing ───────────────────────────────────────────────────
 
-    def run_turn_text(self, text: str, session: dict) -> dict:
+    def run_turn_text(self, text: str, session: dict,
+                      user_lat: float = None, user_lng: float = None) -> dict:
         t0 = time.time()
-        result = self._process_turn(text, session)
+        result = self._process_turn(text, session, user_lat=user_lat, user_lng=user_lng)
         result["latency_ms"] = int((time.time() - t0) * 1000)
         return result
 
-    def _process_turn(self, text: str, session: dict) -> dict:
+    def _process_turn(self, text: str, session: dict,
+                      user_lat: float = None, user_lng: float = None) -> dict:
         memory: ConversationMemory = session["memory"]
         session["turn"] += 1
 
@@ -131,20 +146,24 @@ class AeroGuide:
         entities      = intent_result.get("entities", {})
         language      = intent_result.get("language", "english")
 
-        db_results = self._fetch_db_data(intent, entities, memory)
+        db_results = self._fetch_db_data(intent, entities, memory,
+                                         user_lat=user_lat, user_lng=user_lng)
 
         memory.update(text, intent, entities)
 
-        response = self._generate_response(
-            transcript = text,
-            intent     = intent,
-            db_results = db_results,
-            memory     = memory,
-        )
+        response = self._template_response(intent, db_results) \
+                   or self._generate_response(
+                        transcript = text,
+                        intent     = intent,
+                        db_results = db_results,
+                        memory     = memory,
+                        entities   = entities,
+                   )
 
         response_text = response.get("response", "")
         followup      = response.get("followup")
         map_hint      = response.get("map_hint", {})
+        directions    = db_results.get("directions")
 
         memory.record_agent(response_text)
         self.intent_classifier.add_agent_turn(response_text)
@@ -158,6 +177,7 @@ class AeroGuide:
             "response":    response_text,
             "followup":    followup,
             "map_hint":    map_hint,
+            "directions":  directions,
             "end_session": intent == "end_conversation",
             "language":    language,
         }
@@ -165,7 +185,8 @@ class AeroGuide:
     # ── DB fetch routing ──────────────────────────────────────────────────
 
     def _fetch_db_data(self, intent: str, entities: dict,
-                       memory: ConversationMemory) -> dict:
+                       memory: ConversationMemory,
+                       user_lat: float = None, user_lng: float = None) -> dict:
         results: dict = {}
 
         flight_number = entities.get("flight_number") or memory.flight_number
@@ -224,22 +245,47 @@ class AeroGuide:
                 results["facilities"] = ent.resolve_facility(facility_type, terminal)
             if brand_name:
                 results["restaurants"] = ent.resolve_restaurant(brand_name, terminal)
-            # Navigation with just a brand name (no gate/facility) — still useful
             if not gate_code and not facility_type and not brand_name:
                 results["facilities"] = ent.resolve_facility("restroom", terminal)
 
+            # GPS-based turn-by-turn directions
+            if user_lat is not None and user_lng is not None:
+                try:
+                    user_loc = nav.find_user_location(self.conn, user_lat, user_lng)
+                    dest     = nav.find_destination(
+                        self.conn,
+                        brand_name    = brand_name,
+                        gate_code     = gate_code,
+                        facility_type = facility_type,
+                        terminal      = terminal,
+                    )
+                    if user_loc and dest:
+                        results["directions"] = nav.build_directions(
+                            self.conn, user_loc, dest
+                        )
+                        results["user_location"] = user_loc
+                except Exception as e:
+                    logger.error(f"[AeroGuide] Navigation engine error: {e}")
+
         elif intent == "service_info":
+            # Detect charging / Wi-Fi queries by keyword in facility_type or text
             if facility_type:
-                results["facilities"] = ent.resolve_facility(facility_type, terminal)
+                flt = facility_type.lower()
+                if any(k in flt for k in ("charg", "power", "usb", "socket", "plug")):
+                    results["charging"] = ent.resolve_charging_stations(terminal)
+                elif any(k in flt for k in ("wifi", "wi-fi", "internet", "network")):
+                    results["wifi"] = ent.resolve_wifi(terminal)
+                else:
+                    results["facilities"] = ent.resolve_facility(facility_type, terminal)
             else:
-                # Return a mix of common services
                 results["facilities"] = (
                     ent.resolve_facility("ATM", terminal) +
                     ent.resolve_facility("Currency Exchange", terminal)[:2]
                 )
 
         elif intent == "transport_info":
-            results["parking"] = ent.resolve_parking(terminal)
+            results["parking"]   = ent.resolve_parking(terminal)
+            results["transport"] = ent.resolve_transport(terminal)
 
         return results
 
@@ -295,10 +341,88 @@ class AeroGuide:
             logger.error(f"[AeroGuide] shop lookup failed: {e}")
             return []
 
+    # ── Template responses (no LLM — instant) ────────────────────────────
+
+    def _template_response(self, intent: str, db_results: dict) -> dict | None:
+        """
+        Return a pre-built response for intents that don't need LLM creativity.
+        Returns None to fall through to Ollama for complex intents.
+        """
+        hint = lambda t, f, l: {"terminal": t, "floor": f, "landmark": l}
+
+        if intent == "greeting":
+            return {
+                "response": "Welcome to Skylight International Airport! I can help with "
+                             "flights, food, navigation, lounges, and services. What do you need?",
+                "followup": None,
+                "map_hint": {},
+            }
+
+        if intent == "end_conversation":
+            return {
+                "response": "Have a great flight! Safe travels.",
+                "followup": None,
+                "map_hint": {},
+            }
+
+        if intent == "navigation" and db_results.get("directions"):
+            d = db_results["directions"]
+            steps = d.get("steps", [])
+            dest  = d.get("destination_name", "your destination")
+            dist  = d.get("distance_m", "")
+            dist_txt = f"about {dist} metres" if dist else ""
+            summary = f"{steps[0]} " if steps else ""
+            if len(steps) > 1:
+                summary += steps[1]
+            return {
+                "response": f"{summary} You'll reach {dest}{f', {dist_txt}' if dist_txt else ''}.",
+                "followup": "Need directions to anything else?",
+                "map_hint": hint(
+                    d.get("destination_terminal"),
+                    d.get("destination_floor"),
+                    dest,
+                ),
+            }
+
+        if intent == "flight_status" and db_results.get("flights"):
+            f = db_results["flights"][0]
+            direction = "to" if f.get("direction") == "DEPARTURE" else "from"
+            city = f.get("dest_city") if f.get("direction") == "DEPARTURE" else f.get("origin_city")
+            status = f.get("status_default", "On-Time")
+            return {
+                "response": (
+                    f"Flight {f['flight_number']} ({f['airline_name']}) {direction} {city} — "
+                    f"Gate {f.get('gate_code','?')}, {f.get('terminal_code','?')}. "
+                    f"Status: {status}. Scheduled {f.get('scheduled_time','?')}."
+                ),
+                "followup": "Want directions to the gate?",
+                "map_hint": hint(f.get("terminal_code"), "L2", f"Gate {f.get('gate_code','')}"),
+            }
+
+        if intent == "baggage_info" and db_results.get("baggage_belts"):
+            b = db_results["baggage_belts"][0]
+            fn = f" for flight {b['flight_number']}" if b.get("flight_number") else ""
+            return {
+                "response": f"Baggage belt {b['belt_code']}{fn} is in {b.get('terminal_code','?')} {b.get('floor_code','?')}.",
+                "followup": None,
+                "map_hint": hint(b.get("terminal_code"), b.get("floor_code"), f"Belt {b['belt_code']}"),
+            }
+
+        return None  # fall through to Ollama
+
     # ── LLM response generation ───────────────────────────────────────────
 
     def _generate_response(self, transcript: str, intent: str,
-                           db_results: dict, memory: ConversationMemory) -> dict:
+                           db_results: dict, memory: ConversationMemory,
+                           entities: dict = None) -> dict:
+        # ── Cache check ───────────────────────────────────────────────────
+        entities = entities or {}
+        if intent not in _NO_CACHE_INTENTS:
+            key = self._cache_key(intent, entities)
+            if key in self._cache:
+                logger.info(f"[Cache] HIT for {key[:60]}")
+                return self._cache[key]
+
         now = datetime.now(IST)
         db_summary = self._summarise_db(db_results)
 
@@ -316,16 +440,17 @@ class AeroGuide:
             resp = requests.post(
                 f"{OLLAMA_URL}/api/chat",
                 json={
-                    "model":   OLLAMA_MODEL,
+                    "model":      OLLAMA_MODEL,
+                    "keep_alive": -1,       # never unload model from RAM
                     "messages": [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user",   "content": prompt},
                     ],
                     "format": "json",
                     "stream": False,
-                    "options": {"temperature": 0.4, "num_predict": 300},
+                    "options": {"temperature": 0.4, "num_predict": 150},
                 },
-                timeout=60,
+                timeout=(5, 180),
             )
             resp.raise_for_status()
             raw   = resp.json()["message"]["content"].strip()
@@ -338,6 +463,10 @@ class AeroGuide:
                 if parsed.get("followup"):
                     parsed["followup"] = self._clean(parsed["followup"])
                 logger.info(f"[AeroGuide] Response: '{parsed.get('response','')[:80]}'")
+                # Store in cache
+                if intent not in _NO_CACHE_INTENTS:
+                    self._cache[key] = parsed
+                    logger.info(f"[Cache] STORED for {key[:60]}")
                 return parsed
 
         except (requests.ConnectionError, requests.Timeout):
@@ -368,7 +497,7 @@ class AeroGuide:
                 )
 
         if "flights_by_dest" in db_results:
-            for f in db_results["flights_by_dest"][:5]:
+            for f in db_results["flights_by_dest"][:3]:
                 lines.append(
                     f"Flight {f['flight_number']} ({f['airline_name']}) | "
                     f"{f['direction']} | Scheduled: {f['scheduled_time']} | "
@@ -385,7 +514,7 @@ class AeroGuide:
                 )
 
         if "menu" in db_results:
-            for m in db_results["menu"][:10]:
+            for m in db_results["menu"][:4]:
                 veg = "(veg)" if m.get("is_vegetarian") else "(non-veg)"
                 lines.append(
                     f"Menu item: {m['item_name']} {veg} — {m['price_inr']} rupees | "
@@ -393,7 +522,7 @@ class AeroGuide:
                 )
 
         if "popular_items" in db_results:
-            for m in db_results["popular_items"][:8]:
+            for m in db_results["popular_items"][:4]:
                 veg = "(veg)" if m.get("is_vegetarian") else "(non-veg)"
                 lines.append(
                     f"Popular: {m['item_name']} {veg} — {m['price_inr']} rupees "
@@ -402,7 +531,7 @@ class AeroGuide:
 
         if "menu_search" in db_results:
             seen_brands: set = set()
-            for m in db_results["menu_search"][:12]:
+            for m in db_results["menu_search"][:4]:
                 veg = "(veg)" if m.get("is_vegetarian") else "(non-veg)"
                 brand = m["brand_name"]
                 lines.append(
@@ -420,7 +549,7 @@ class AeroGuide:
             )
 
         if "facilities" in db_results:
-            for f in db_results["facilities"][:6]:
+            for f in db_results["facilities"][:3]:
                 if f.get("kind") == "restroom":
                     lines.append(
                         f"Restroom ({f.get('type','?')}) | "
@@ -487,6 +616,21 @@ class AeroGuide:
                     f"{s.get('terminal_code','?')} {s.get('floor_code','?')} | "
                     f"Zone: {s.get('zone_name','?')} | {hours}"
                 )
+
+        if "user_location" in db_results:
+            ul = db_results["user_location"]
+            lines.append(
+                f"User's current location: {ul['zone_name']}, "
+                f"{ul['terminal_code']} {ul['floor_code']} "
+                f"(~{ul.get('gps_dist_m', '?')}m from GPS fix)"
+            )
+
+        if "directions" in db_results:
+            d = db_results["directions"]
+            lines.append(f"Navigation to {d.get('destination_name','destination')} "
+                         f"(~{d.get('distance_m','?')}m total):")
+            for i, step in enumerate(d.get("steps", []), 1):
+                lines.append(f"  Step {i}: {step}")
 
         return "\n".join(lines) if lines else "No relevant records found in database."
 

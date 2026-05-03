@@ -11,6 +11,13 @@
 -- =====================================================================
 
 -- ─── CLEAN SLATE ─────────────────────────────────────────────────────
+DROP TABLE IF EXISTS transport_nodes;
+DROP TABLE IF EXISTS car_rental_desks;
+DROP TABLE IF EXISTS taxi_stands;
+DROP TABLE IF EXISTS wifi_zones;
+DROP TABLE IF EXISTS info_kiosks;
+DROP TABLE IF EXISTS charging_stations;
+DROP TABLE IF EXISTS menu_items;
 DROP TABLE IF EXISTS flight_schedule;
 DROP TABLE IF EXISTS aircraft;
 DROP TABLE IF EXISTS routes;
@@ -304,7 +311,8 @@ CREATE TABLE parking_lots (
     sw_x_m      DECIMAL(8,2), sw_y_m DECIMAL(8,2),
     ne_x_m      DECIMAL(8,2), ne_y_m DECIMAL(8,2),
     sw_latitude DECIMAL(9,6), sw_longitude DECIMAL(9,6),
-    ne_latitude DECIMAL(9,6), ne_longitude DECIMAL(9,6)
+    ne_latitude DECIMAL(9,6), ne_longitude DECIMAL(9,6),
+    center_latitude DECIMAL(9,6), center_longitude DECIMAL(9,6)
 );
 
 -- ─── 19. SERVICES ─────────────────────────────────────────────────────
@@ -328,7 +336,11 @@ CREATE TABLE staff (
     terminal_id   INT,
     floor_id      INT,
     shift         VARCHAR(20),
-    phone_ext     VARCHAR(8)
+    phone_ext     VARCHAR(8),
+    x_m           DECIMAL(8,2),
+    y_m           DECIMAL(8,2),
+    latitude      DECIMAL(9,6),
+    longitude     DECIMAL(9,6)
 );
 
 -- ─── 21. AIRLINES ─────────────────────────────────────────────────────
@@ -833,16 +845,16 @@ INSERT INTO baggage_belts (belt_id, terminal_id, floor_id, belt_code, length_m, 
   (10, 2, 202, 'B10', 60, 1590, 1419, 21.127043, 72.756491, 'International');
 
 -- ─── DATA: PARKING LOTS ─────────────────────────────────
-INSERT INTO parking_lots (lot_id, terminal_id, code, type, capacity, rate_inr_hr, floor_level, sw_x_m, sw_y_m, ne_x_m, ne_y_m, sw_latitude, sw_longitude, ne_latitude, ne_longitude) VALUES
-  (1, 1, 'P1A', 'Short-Term', 450, 80, -1, 1450, 950, 1500, 1000, 21.122802, 72.755143, 21.123254, 72.755624),
-  (2, 1, 'P1B', 'Long-Term', 1200, 40, -1, 1300, 900, 1450, 1000, 21.122349, 72.753698, 21.123254, 72.755143),
-  (3, 1, 'P1V', 'VIP', 60, 300, -1, 1700, 950, 1750, 1000, 21.122802, 72.75755, 21.123254, 72.758032),
-  (4, 2, 'P2A', 'Short-Term', 600, 100, -1, 1400, 1300, 1500, 1400, 21.125967, 72.754661, 21.126871, 72.755624),
-  (5, 2, 'P2B', 'Long-Term', 1800, 50, -1, 1200, 1200, 1400, 1400, 21.125062, 72.752736, 21.126871, 72.754661),
-  (6, 2, 'P2P', 'Premium', 200, 180, -1, 1750, 1400, 1820, 1500, 21.126871, 72.758032, 21.127776, 72.758706),
-  (7, 2, 'P2V', 'VIP', 80, 400, -1, 1820, 1400, 1860, 1500, 21.126871, 72.758706, 21.127776, 72.759091),
-  (8, 1, 'P1S', 'Staff', 400, 0, -1, 1100, 850, 1300, 1000, 21.121897, 72.751773, 21.123254, 72.753698),
-  (9, 2, 'P2S', 'Staff', 500, 0, -1, 1000, 1200, 1200, 1400, 21.125062, 72.75081, 21.126871, 72.752736);
+INSERT INTO parking_lots (lot_id, terminal_id, code, type, capacity, rate_inr_hr, floor_level, sw_x_m, sw_y_m, ne_x_m, ne_y_m, sw_latitude, sw_longitude, ne_latitude, ne_longitude, center_latitude, center_longitude) VALUES
+  (1, 1, 'P1A', 'Short-Term',  450,  80, -1, 1450,  950, 1500, 1000, 21.122802, 72.755143, 21.123254, 72.755624, 21.122985, 72.755340),
+  (2, 1, 'P1B', 'Long-Term',  1200,  40, -1, 1300,  900, 1450, 1000, 21.122349, 72.753698, 21.123254, 72.755143, 21.122760, 72.754380),
+  (3, 1, 'P1V', 'VIP',          60, 300, -1, 1700,  950, 1750, 1000, 21.122802, 72.757550, 21.123254, 72.758032, 21.122985, 72.757740),
+  (4, 2, 'P2A', 'Short-Term',  600, 100, -1, 1400, 1300, 1500, 1400, 21.125967, 72.754661, 21.126871, 72.755624, 21.126360, 72.755100),
+  (5, 2, 'P2B', 'Long-Term',  1800,  50, -1, 1200, 1200, 1400, 1400, 21.125062, 72.752736, 21.126871, 72.754661, 21.125910, 72.753660),
+  (6, 2, 'P2P', 'Premium',     200, 180, -1, 1750, 1400, 1820, 1500, 21.126871, 72.758032, 21.127776, 72.758706, 21.127260, 72.758316),
+  (7, 2, 'P2V', 'VIP',          80, 400, -1, 1820, 1400, 1860, 1500, 21.126871, 72.758706, 21.127776, 72.759091, 21.127260, 72.758844),
+  (8, 1, 'P1S', 'Staff',       400,   0, -1, 1100,  850, 1300, 1000, 21.121897, 72.751773, 21.123254, 72.753698, 21.122535, 72.752700),
+  (9, 2, 'P2S', 'Staff',       500,   0, -1, 1000, 1200, 1200, 1400, 21.125062, 72.750810, 21.126871, 72.752736, 21.125910, 72.751740);
 
 -- ─── DATA: SERVICES ─────────────────────────────────────
 INSERT INTO services (service_id, floor_id, type, name, x_m, y_m, latitude, longitude, open_24) VALUES
@@ -861,25 +873,82 @@ INSERT INTO services (service_id, floor_id, type, name, x_m, y_m, latitude, long
   (13, 203, 'Prayer', 'Multi-faith Prayer Room', 1550, 1415, 21.127007, 72.756106, 1),
   (14, 204, 'Smoking', 'Smoking Lounge', 1578, 1429, 21.127133, 72.756376, 1),
   (15, 204, 'Nursery', 'Baby Care Room', 1554, 1429, 21.127133, 72.756144, 1),
-  (16, 205, 'Spa', 'Niyama Spa', 1586, 1421, 21.127061, 72.756453, 0);
+  (16, 205,  'Spa',              'Niyama Spa',                    1586, 1421, 21.127061, 72.756453, 0),
+  -- additional ATMs
+  (17, 104,  'ATM',             'ICICI Bank ATM T1 L2',          1521, 1026, 21.123444, 72.755782, 1),
+  (18, 203,  'ATM',             'SBI ATM T2 L1',                 1538, 1411, 21.126909, 72.755945, 1),
+  (19, 104,  'ATM',             'Axis Bank ATM T1 L2',           1523, 1026, 21.123444, 72.755801, 1),
+  -- pharmacy
+  (20, 102,  'Pharmacy',        'MedPlus Pharmacy T1',           1536, 1010, 21.123300, 72.755926, 0),
+  (21, 202,  'Pharmacy',        'Apollo Pharmacy T2',            1534, 1414, 21.126936, 72.755906, 1),
+  -- left luggage / lockers
+  (22, 102,  'Left Luggage',    'Left Luggage Counter T1',       1680, 1010, 21.123300, 72.757308, 0),
+  (23, 202,  'Left Luggage',    'Left Luggage Counter T2',       1648, 1415, 21.126945, 72.757001, 0),
+  -- currency exchange (additional outlets)
+  (24, 103,  'Currency Exchange','Travelex T1 L1',               1542, 1011, 21.123309, 72.755983, 0),
+  (25, 104,  'Currency Exchange','Thomas Cook T1 L2',            1525, 1026, 21.123444, 72.755820, 0),
+  (26, 203,  'Currency Exchange','Travelex T2 L1',               1540, 1413, 21.126927, 72.755964, 0),
+  (27, 204,  'Currency Exchange','Thomas Cook T2 L2',            1535, 1420, 21.126990, 72.755916, 0),
+  -- outdoor smoking areas
+  (28, 102,  'Smoking Area',    'Outdoor Smoking Bay T1',        1695, 1003, 21.123237, 72.757452, 1),
+  -- prayer rooms (additional)
+  (29, 104,  'Prayer',          'Multi-faith Prayer Room T1 L2', 1558, 1033, 21.123507, 72.756137, 1),
+  -- lost & found
+  (30, 102,  'Lost & Found',    'Lost & Found T1 Ground',        1522, 1006, 21.123264, 72.755791, 0),
+  (31, 202,  'Lost & Found',    'Lost & Found T2 Ground',        1519, 1412, 21.126918, 72.755762, 0),
+  -- kids / family zones
+  (32, 104,  'Kids Zone',       'Family Play Area T1 L2',        1557, 1033, 21.123507, 72.756127, 0),
+  (33, 204,  'Kids Zone',       'Family Play Area T2 L2',        1584, 1429, 21.127071, 72.756386, 0),
+  -- porter service
+  (34, 102,  'Porter Service',  'Porter Desk T1 Arrivals',       1519, 1009, 21.123291, 72.755762, 1),
+  (35, 202,  'Porter Service',  'Porter Desk T2 Arrivals',       1516, 1412, 21.126918, 72.755734, 1),
+  -- lockers
+  (36, 103,  'Locker Room',     'Self-Service Lockers T1 L1',    1546, 1013, 21.123327, 72.756022, 0),
+  (37, 203,  'Locker Room',     'Self-Service Lockers T2 L1',    1544, 1414, 21.126936, 72.756002, 0),
+  -- additional medical
+  (38, 103,  'Medical',         'First Aid Post T1 L1',          1545, 1014, 21.123336, 72.756012, 1),
+  (39, 203,  'Medical',         'Medical Assistance T2 L1',      1552, 1413, 21.126927, 72.756079, 1),
+  -- baby care (additional)
+  (40, 103,  'Nursery',         'Baby Care Room T1 L1',          1549, 1015, 21.123345, 72.756050, 1);
 
 -- ─── DATA: STAFF ─────────────────────────────────────────
-INSERT INTO staff (staff_id, employee_code, full_name, role, department, terminal_id, floor_id, shift, phone_ext) VALUES
-  (1, 'SLA-1001', 'Rajesh Patel', 'Airport Manager', 'Operations', NULL, NULL, 'Morning', '1001'),
-  (2, 'SLA-1002', 'Priya Mehta', 'Duty Manager T1', 'Operations', 1, 103, 'Morning', '1002'),
-  (3, 'SLA-1003', 'Arjun Sharma', 'Duty Manager T2', 'Operations', 2, 203, 'Morning', '1003'),
-  (4, 'SLA-1004', 'Anita Desai', 'Security Head', 'Security', NULL, NULL, 'Morning', '1004'),
-  (5, 'SLA-1005', 'Vikram Singh', 'CISF Officer', 'Security', 1, 103, 'Morning', '1005'),
-  (6, 'SLA-1006', 'Sneha Iyer', 'CISF Officer', 'Security', 2, 203, 'Afternoon', '1006'),
-  (7, 'SLA-1007', 'Karan Joshi', 'Information Officer', 'Customer Service', 1, 102, 'Morning', '1007'),
-  (8, 'SLA-1008', 'Meera Kapoor', 'Information Officer', 'Customer Service', 2, 202, 'Night', '1008'),
-  (9, 'SLA-1009', 'Rohit Nair', 'Baggage Handler', 'Ground Operations', 1, 102, 'Night', '1009'),
-  (10, 'SLA-1010', 'Pooja Reddy', 'Baggage Handler', 'Ground Operations', 2, 202, 'Morning', '1010'),
-  (11, 'SLA-1011', 'Sachin Verma', 'Lift Technician', 'Engineering', NULL, NULL, 'Afternoon', '1011'),
-  (12, 'SLA-1012', 'Deepika Rao', 'Cleaning Supervisor', 'Housekeeping', 1, 104, 'Morning', '1012'),
-  (13, 'SLA-1013', 'Imran Khan', 'Cleaning Supervisor', 'Housekeeping', 2, 204, 'Afternoon', '1013'),
-  (14, 'SLA-1014', 'Ravi Kumar', 'Paramedic', 'Medical', 1, 102, 'Morning', '1014'),
-  (15, 'SLA-1015', 'Anjali Nair', 'Paramedic', 'Medical', 2, 202, 'Night', '1015');
+-- Coordinates: lat = 21.11421 + y_m * 0.000009, lng = 72.74118 + x_m * 0.0000096
+INSERT INTO staff (staff_id, employee_code, full_name, role, department, terminal_id, floor_id, shift, phone_ext, x_m, y_m, latitude, longitude) VALUES
+  (1,  'SLA-1001', 'Rajesh Patel',     'Airport Manager',        'Operations',       NULL, NULL, 'Morning',   '1001', 1515.00, 1005.00, 21.123255, 72.755724),
+  (2,  'SLA-1002', 'Priya Mehta',      'Duty Manager T1',        'Operations',       1, 103,    'Morning',   '1002', 1540.00, 1010.00, 21.123300, 72.755964),
+  (3,  'SLA-1003', 'Arjun Sharma',     'Duty Manager T2',        'Operations',       2, 203,    'Morning',   '1003', 1545.00, 1413.00, 21.126927, 72.756012),
+  (4,  'SLA-1004', 'Anita Desai',      'Security Head',          'Security',         NULL, NULL, 'Morning',   '1004', 1510.00, 1003.00, 21.123237, 72.755676),
+  (5,  'SLA-1005', 'Vikram Singh',     'CISF Officer',           'Security',         1, 103,    'Morning',   '1005', 1575.00, 1017.00, 21.123363, 72.756300),
+  (6,  'SLA-1006', 'Sneha Iyer',       'CISF Officer',           'Security',         2, 203,    'Afternoon', '1006', 1580.00, 1417.00, 21.126963, 72.756348),
+  (7,  'SLA-1007', 'Karan Joshi',      'Information Officer',    'Customer Service', 1, 102,    'Morning',   '1007', 1530.00, 1009.00, 21.123291, 72.755868),
+  (8,  'SLA-1008', 'Meera Kapoor',     'Information Officer',    'Customer Service', 2, 202,    'Night',     '1008', 1536.00, 1414.00, 21.126936, 72.755926),
+  (9,  'SLA-1009', 'Rohit Nair',       'Baggage Handler',        'Ground Operations',1, 102,    'Night',     '1009', 1560.00, 1021.00, 21.123399, 72.756156),
+  (10, 'SLA-1010', 'Pooja Reddy',      'Baggage Handler',        'Ground Operations',2, 202,    'Morning',   '1010', 1575.00, 1419.00, 21.126981, 72.756300),
+  (11, 'SLA-1011', 'Sachin Verma',     'Lift Technician',        'Engineering',      NULL, NULL, 'Afternoon', '1011', 1510.00, 1005.00, 21.123255, 72.755676),
+  (12, 'SLA-1012', 'Deepika Rao',      'Cleaning Supervisor',    'Housekeeping',     1, 104,    'Morning',   '1012', 1565.00, 1030.00, 21.123480, 72.756204),
+  (13, 'SLA-1013', 'Imran Khan',       'Cleaning Supervisor',    'Housekeeping',     2, 204,    'Afternoon', '1013', 1590.00, 1426.00, 21.127044, 72.756444),
+  (14, 'SLA-1014', 'Ravi Kumar',       'Paramedic',              'Medical',          1, 102,    'Morning',   '1014', 1534.00, 1011.00, 21.123309, 72.755906),
+  (15, 'SLA-1015', 'Anjali Nair',      'Paramedic',              'Medical',          2, 202,    'Night',     '1015', 1540.00, 1416.00, 21.126954, 72.755964),
+  (16, 'SLA-1016', 'Farhan Sheikh',    'Gate Agent',             'Operations',       1, 104,    'Morning',   '1016', 1535.00, 1028.00, 21.123462, 72.755916),
+  (17, 'SLA-1017', 'Nandini Pillai',   'Gate Agent',             'Operations',       1, 104,    'Afternoon', '1017', 1560.00, 1028.00, 21.123462, 72.756156),
+  (18, 'SLA-1018', 'Suresh Menon',     'Gate Agent',             'Operations',       2, 204,    'Morning',   '1018', 1540.00, 1432.00, 21.127098, 72.755964),
+  (19, 'SLA-1019', 'Ritu Agarwal',     'Gate Agent',             'Operations',       2, 204,    'Night',     '1019', 1570.00, 1432.00, 21.127098, 72.756252),
+  (20, 'SLA-1020', 'Mohammed Ansari',  'Immigration Officer',    'Security',         2, 202,    'Morning',   '1020', 1542.00, 1416.00, 21.126954, 72.755983),
+  (21, 'SLA-1021', 'Kavitha Sundaram', 'Immigration Officer',    'Security',         2, 202,    'Afternoon', '1021', 1548.00, 1416.00, 21.126954, 72.756041),
+  (22, 'SLA-1022', 'Tejas Bhatt',      'Customer Service Agent', 'Customer Service', 1, 102,    'Morning',   '1022', 1527.00, 1010.00, 21.123300, 72.755839),
+  (23, 'SLA-1023', 'Lakshmi Iyer',     'Customer Service Agent', 'Customer Service', 2, 202,    'Afternoon', '1023', 1535.00, 1415.00, 21.126945, 72.755916),
+  (24, 'SLA-1024', 'Dinesh Chauhan',   'Wheelchair Attendant',   'Accessibility',    1, 102,    'Morning',   '1024', 1520.00, 1008.00, 21.123282, 72.755772),
+  (25, 'SLA-1025', 'Sunita Bose',      'Wheelchair Attendant',   'Accessibility',    2, 202,    'Afternoon', '1025', 1528.00, 1413.00, 21.126927, 72.755849),
+  (26, 'SLA-1026', 'Harish Pandey',    'Fire Safety Officer',    'Security',         1, 102,    'Morning',   '1026', 1518.00, 1007.00, 21.123273, 72.755753),
+  (27, 'SLA-1027', 'Geeta Srinivasan', 'Fire Safety Officer',    'Security',         2, 202,    'Night',     '1027', 1525.00, 1412.00, 21.126918, 72.755820),
+  (28, 'SLA-1028', 'Aakash Malhotra',  'Lounge Host',            'Hospitality',      1, 105,    'Morning',   '1028', 1540.00, 1016.00, 21.123354, 72.755964),
+  (29, 'SLA-1029', 'Preethi Nambiar',  'Lounge Host',            'Hospitality',      2, 205,    'Afternoon', '1029', 1545.00, 1418.00, 21.126972, 72.756012),
+  (30, 'SLA-1030', 'Vishal Tiwari',    'Duty Manager T1',        'Operations',       1, 103,    'Night',     '1030', 1545.00, 1010.00, 21.123300, 72.756012),
+  (31, 'SLA-1031', 'Deepa George',     'Duty Manager T2',        'Operations',       2, 203,    'Night',     '1031', 1550.00, 1413.00, 21.126927, 72.756060),
+  (32, 'SLA-1032', 'Nikhil Jain',      'IT Support Engineer',    'Engineering',      NULL, NULL, 'Morning',   '1032', 1600.00, 1010.00, 21.123300, 72.756540),
+  (33, 'SLA-1033', 'Swathi Krishnan',  'Operations Controller',  'Operations',       NULL, NULL, 'Afternoon', '1033', 1602.00, 1012.00, 21.123318, 72.756559),
+  (34, 'SLA-1034', 'Abdul Rehman',     'CISF Officer',           'Security',         1, 103,    'Night',     '1034', 1578.00, 1017.00, 21.123363, 72.756329),
+  (35, 'SLA-1035', 'Preeti Sharma',    'CISF Officer',           'Security',         2, 203,    'Morning',   '1035', 1583.00, 1417.00, 21.126963, 72.756377);
 
 -- ─── DATA: AIRLINES ─────────────────────────────────────
 INSERT INTO airlines (airline_id, iata_code, icao_code, name, country, type, alliance) VALUES
@@ -1829,7 +1898,266 @@ INSERT INTO menu_items (item_id, brand_id, category, item_name, description, pri
 (121, 43,'Dessert','Mini Cup 100ml',       'Compact take-away cup',                         580, 1),
 (122, 43,'Dessert','Sundae',               'Premium sundae with artisan toppings',          950, 1),
 (123, 43,'Dessert','Milkshake',            'Thick artisan milkshake',                       950, 1),
-(124, 43,'Dessert','Pint 500ml',           'Take-home 500ml pint',                         1300, 1);
+(124, 43,'Dessert','Pint 500ml',           'Take-home 500ml pint',                         1300, 1),
+-- ── More Haldiram's (brand_id=38) ────────────────────────────────────
+(125, 38,'Main',   'Dal Makhani',          'Slow-cooked black lentils in buttery gravy',    350, 1),
+(126, 38,'Main',   'Paneer Butter Masala', 'Cottage cheese in rich tomato-butter gravy',    380, 1),
+(127, 38,'Main',   'Dahi Bhalla',          'Lentil dumplings in sweetened yoghurt',         180, 1),
+(128, 38,'Dessert','Kheer',                'Creamy rice pudding with cardamom and nuts',     150, 1),
+(129, 38,'Beverage','Masala Chai',         'Spiced milk tea with ginger',                    80, 1),
+(130, 38,'Snack',  'Papdi Chaat',          'Crispy discs with chutneys and yoghurt',         160, 1),
+(131, 38,'Main',   'Poha',                 'Flattened rice with vegetables and spices',      160, 1),
+(132, 38,'Dessert','Jalebi',               'Crispy fried spirals soaked in syrup',           120, 1),
+-- ── More Saravana Bhavan (brand_id=39) ───────────────────────────────
+(133, 39,'Main',   'Plain Dosa',           'Thin crispy rice-lentil crepe with chutneys',   190, 1),
+(134, 39,'Main',   'Onion Uthappam',       'Thick pancake topped with onions',              220, 1),
+(135, 39,'Main',   'Puri Bhaji',           '3 puris with spiced potato curry',              200, 1),
+(136, 39,'Dessert','Kesari',               'Semolina sweet with saffron',                   120, 1),
+(137, 39,'Dessert','Payasam',              'Rice pudding with cashews and raisins',          150, 1),
+(138, 39,'Snack',  'Bajji 4pc',            'Battered vegetable fritters',                   140, 1),
+(139, 39,'Main',   'Set Dosa 3pc',         '3 small soft dosas with sambar and chutneys',   200, 1),
+-- ── More Wow! Momo (brand_id=40) ─────────────────────────────────────
+(140, 40,'Main',   'Tandoori Momos 6pc',   'Grilled momos with tandoor char',               280, 1),
+(141, 40,'Main',   'Chocolate Momos 6pc',  'Dessert momos with chocolate filling',           290, 1),
+(142, 40,'Main',   'Corn Cheese Momos 6pc','Stuffed with corn and cheese',                  260, 1),
+(143, 40,'Main',   'Schezwan Fried Momos', 'Crispy momos tossed in spicy schezwan sauce',   300, 1),
+(144, 40,'Beverage','Lemon Mint Cooler',   'Chilled lime and mint drink',                   150, 1),
+-- ── McDonald's Breakfast (brand_id=32) ───────────────────────────────
+(145, 32,'Main',   'Egg McMuffin',         'Egg with cheese on English muffin',             280, 0),
+(146, 32,'Main',   'McAloo Tikki Wrap',    'McAloo tikki in a soft tortilla wrap',           230, 1),
+(147, 32,'Main',   'Hash Brown',           'Crispy golden potato patty',                     100, 1),
+(148, 32,'Beverage','McCafe Latte',        'Espresso with steamed milk',                     230, 1),
+-- ── KFC additions (brand_id=34) ─────────────────────────────────────
+(149, 34,'Main',   'Hot & Crispy 4pc',     '4 pieces hot crispy chicken',                   550, 0),
+(150, 34,'Main',   'Krunch Burger',        'Crispy chicken burger with tangy mayo',          280, 0),
+(151, 34,'Main',   'Rice Meal',            'Chicken with flavoured rice and coleslaw',       380, 0),
+-- ── More Starbucks (brand_id=29) ─────────────────────────────────────
+(152, 29,'Beverage','Matcha Green Tea Latte','Ceremonial-grade matcha with steamed milk',    430, 1),
+(153, 29,'Beverage','Chai Tea Latte',      'Spiced chai concentrate with steamed milk',      390, 1),
+(154, 29,'Beverage','Pink Drink',          'Strawberry-acai with coconut milk',              450, 1),
+(155, 29,'Beverage','Nitro Cold Brew',     'Smooth nitrogen-infused cold brew',              450, 1),
+(156, 29,'Food',   'Egg Salad Sandwich',   'Creamy egg salad on multigrain',                 480, 0),
+-- ── More Burger King (brand_id=33) ───────────────────────────────────
+(157, 33,'Main',   'Crispy Veg King',      'Crispy veggie patty burger with special sauce',  280, 1),
+(158, 33,'Main',   'BK Big Fish',          'Crispy fish fillet with tartar sauce',           320, 0),
+(159, 33,'Beverage','Mango Smoothie',      'Thick chilled mango smoothie',                  200, 1),
+-- ── More Subway (brand_id=35) ────────────────────────────────────────
+(160, 35,'Main',   'Paneer Tikka 6"',      'Marinated paneer tikka on Italian bread',        300, 1),
+(161, 35,'Main',   'BLT 6"',              'Bacon, lettuce and tomato sub',                   340, 0),
+(162, 35,'Main',   'Roasted Veggie Footlong','Roasted veggies on herb bread',                480, 1),
+-- ── More Domino's (brand_id=36) ──────────────────────────────────────
+(163, 36,'Main',   'Taco Indiana (Large)', 'Tandoori paneer, jalapeños, onion, capsicum',   750, 1),
+(164, 36,'Main',   'Non-Veg Supreme (Large)','Chicken, pepperoni and sausage loaded pizza', 950, 0),
+(165, 36,'Main',   'Pasta Italiano White', 'Penne in creamy white sauce',                   320, 1),
+(166, 36,'Dessert','Choco Volcano',        'Warm gooey brownie with chocolate sauce',        180, 1),
+-- ── More Costa Coffee (brand_id=30) ──────────────────────────────────
+(167, 30,'Beverage','Mocha',              'Espresso with chocolate and steamed milk',        370, 1),
+(168, 30,'Beverage','Iced Caramel Latte', 'Cold latte with caramel drizzle',                 420, 1),
+(169, 30,'Food',   'Ham & Cheese Toastie','Toasted ham and cheese sandwich',                 320, 0),
+-- ── More Dunkin'' (brand_id=41) ──────────────────────────────────────
+(170, 41,'Snack',  'Strawberry Donut',    'Strawberry-frosted ring donut',                   130, 1),
+(171, 41,'Snack',  'Croissant Sandwich',  'Egg and cheese on a buttered croissant',          280, 0),
+(172, 41,'Beverage','Iced Matcha',        'Matcha with iced milk',                           320, 1),
+-- ── Café Coffee Day additions (brand_id=31) ──────────────────────────
+(173, 31,'Beverage','Cold Brew',          'Slow-steeped cold coffee concentrate',            310, 1),
+(174, 31,'Beverage','Green Tea',          'Freshly brewed green tea',                        160, 1),
+(175, 31,'Food',   'Pasta',               'Penne in choice of sauce',                        300, 1),
+(176, 31,'Food',   'Club Sandwich',       'Triple-decker club sandwich',                     380, 0),
+-- ── Baskin-Robbins additions (brand_id=42) ───────────────────────────
+(177, 42,'Dessert','Ice Cream Cake Slice','Rich ice cream cake with layers',                  450, 1),
+(178, 42,'Dessert','Polar Pizza 6-slice', 'Brownie base with ice cream and toppings',        1200, 1);
+
+-- =====================================================================
+-- 24. CHARGING STATIONS (USB, fast-charge, AC sockets throughout)
+-- =====================================================================
+CREATE TABLE charging_stations (
+    station_id  INT PRIMARY KEY,
+    floor_id    INT NOT NULL,
+    code        VARCHAR(12),
+    x_m         DECIMAL(8,2),   y_m        DECIMAL(8,2),
+    latitude    DECIMAL(9,6),   longitude  DECIMAL(9,6),
+    power_type  VARCHAR(20),
+    outlets     INT,
+    open_24     TINYINT DEFAULT 1,
+    FOREIGN KEY (floor_id) REFERENCES floors(floor_id)
+);
+
+INSERT INTO charging_stations (station_id, floor_id, code, x_m, y_m, latitude, longitude, power_type, outlets, open_24) VALUES
+-- T1 Level 2 — Concourse A
+  (1,  104, 'CS-T1L2-01', 1528, 1028, 21.123462, 72.755849, 'USB-A/C',    8, 1),
+  (2,  104, 'CS-T1L2-02', 1545, 1028, 21.123462, 72.756012, 'USB-A/C',    8, 1),
+  (3,  104, 'CS-T1L2-03', 1558, 1031, 21.123489, 72.756137, 'Fast Charge', 6, 1),
+  (4,  104, 'CS-T1L2-04', 1570, 1029, 21.123471, 72.756252, 'USB-A/C',    8, 1),
+  (5,  104, 'CS-T1L2-05', 1582, 1026, 21.123444, 72.756367, 'Fast Charge', 4, 1),
+  (6,  104, 'CS-T1L2-06', 1595, 1028, 21.123462, 72.756492, 'USB-A/C',    8, 1),
+  (7,  104, 'CS-T1L2-07', 1610, 1025, 21.123435, 72.756636, 'Fast Charge', 6, 1),
+  (8,  104, 'CS-T1L2-08', 1640, 1028, 21.123462, 72.756924, 'USB-A/C',    8, 1),
+-- T1 Level 1
+  (9,  103, 'CS-T1L1-01', 1530, 1011, 21.123309, 72.755868, 'USB-A/C',    6, 1),
+  (10, 103, 'CS-T1L1-02', 1550, 1011, 21.123309, 72.756060, 'USB-A/C',    6, 1),
+  (11, 103, 'CS-T1L1-03', 1645, 1011, 21.123309, 72.756972, 'Fast Charge', 4, 1),
+-- T1 Ground
+  (12, 102, 'CS-T1G-01',  1519, 1007, 21.123273, 72.755762, 'USB-A/C',    6, 1),
+  (13, 102, 'CS-T1G-02',  1660, 1007, 21.123273, 72.757116, 'USB-A/C',    6, 1),
+-- T2 Level 2 — Concourse B / Dining
+  (14, 204, 'CS-T2L2-01', 1536, 1426, 21.127044, 72.755966, 'USB-A/C',    8, 1),
+  (15, 204, 'CS-T2L2-02', 1556, 1426, 21.127044, 72.756118, 'Fast Charge', 6, 1),
+  (16, 204, 'CS-T2L2-03', 1568, 1426, 21.127044, 72.756233, 'USB-A/C',    8, 1),
+  (17, 204, 'CS-T2L2-04', 1580, 1425, 21.127035, 72.756348, 'Fast Charge', 6, 1),
+  (18, 204, 'CS-T2L2-05', 1596, 1426, 21.127044, 72.756502, 'USB-A/C',    8, 1),
+  (19, 204, 'CS-T2L2-06', 1610, 1425, 21.127035, 72.756636, 'Fast Charge', 4, 1),
+  (20, 204, 'CS-T2L2-07', 1625, 1426, 21.127044, 72.756780, 'USB-A/C',    8, 1),
+  (21, 204, 'CS-T2L2-08', 1640, 1425, 21.127035, 72.756924, 'USB-A/C',    8, 1),
+-- T2 Level 1
+  (22, 203, 'CS-T2L1-01', 1538, 1411, 21.126909, 72.755965, 'USB-A/C',    6, 1),
+  (23, 203, 'CS-T2L1-02', 1555, 1411, 21.126909, 72.756108, 'Fast Charge', 4, 1),
+  (24, 203, 'CS-T2L1-03', 1648, 1411, 21.126909, 72.757001, 'USB-A/C',    6, 1),
+-- T2 Ground
+  (25, 202, 'CS-T2G-01',  1520, 1412, 21.126918, 72.755772, 'USB-A/C',    6, 1),
+  (26, 202, 'CS-T2G-02',  1660, 1412, 21.126918, 72.757116, 'USB-A/C',    6, 1),
+-- T2 Level 3 — Premium Lounges
+  (27, 205, 'CS-T2L3-01', 1536, 1419, 21.127043, 72.755966, 'Fast Charge', 4, 1),
+  (28, 205, 'CS-T2L3-02', 1545, 1419, 21.127043, 72.756012, 'Fast Charge', 4, 1),
+  (29, 205, 'CS-T2L3-03', 1558, 1420, 21.127052, 72.756137, 'USB-A/C',    8, 1),
+  (30, 205, 'CS-T2L3-04', 1575, 1420, 21.127052, 72.756300, 'USB-A/C',    6, 1);
+
+-- =====================================================================
+-- 25. INFO KIOSKS (self-service touchscreen and digital boards)
+-- =====================================================================
+CREATE TABLE info_kiosks (
+    kiosk_id     INT PRIMARY KEY,
+    floor_id     INT NOT NULL,
+    code         VARCHAR(12),
+    kiosk_type   VARCHAR(30),
+    x_m          DECIMAL(8,2),  y_m        DECIMAL(8,2),
+    latitude     DECIMAL(9,6),  longitude  DECIMAL(9,6),
+    is_operational TINYINT DEFAULT 1,
+    FOREIGN KEY (floor_id) REFERENCES floors(floor_id)
+);
+
+INSERT INTO info_kiosks (kiosk_id, floor_id, code, kiosk_type, x_m, y_m, latitude, longitude, is_operational) VALUES
+  (1,  102, 'IK-T1G-01',  'Interactive Map',  1527, 1010, 21.123300, 72.755839, 1),
+  (2,  102, 'IK-T1G-02',  'Digital Board',    1636, 1008, 21.123282, 72.756886, 1),
+  (3,  103, 'IK-T1L1-01', 'Touchscreen',      1530, 1012, 21.123318, 72.755868, 1),
+  (4,  103, 'IK-T1L1-02', 'Interactive Map',  1545, 1013, 21.123327, 72.756012, 1),
+  (5,  104, 'IK-T1L2-01', 'Touchscreen',      1520, 1028, 21.123462, 72.755772, 1),
+  (6,  104, 'IK-T1L2-02', 'Interactive Map',  1560, 1032, 21.123543, 72.756156, 1),
+  (7,  104, 'IK-T1L2-03', 'Digital Board',    1635, 1028, 21.123462, 72.756876, 1),
+  (8,  202, 'IK-T2G-01',  'Interactive Map',  1522, 1413, 21.126927, 72.755791, 1),
+  (9,  202, 'IK-T2G-02',  'Digital Board',    1638, 1414, 21.126936, 72.756905, 1),
+  (10, 203, 'IK-T2L1-01', 'Touchscreen',      1534, 1411, 21.126909, 72.755906, 1),
+  (11, 203, 'IK-T2L1-02', 'Interactive Map',  1548, 1413, 21.126927, 72.756041, 1),
+  (12, 204, 'IK-T2L2-01', 'Touchscreen',      1525, 1425, 21.127097, 72.755820, 1),
+  (13, 204, 'IK-T2L2-02', 'Interactive Map',  1570, 1429, 21.127133, 72.756252, 1),
+  (14, 204, 'IK-T2L2-03', 'Digital Board',    1640, 1427, 21.127115, 72.756924, 1);
+
+-- =====================================================================
+-- 26. WI-FI ZONES (free public Wi-Fi coverage areas)
+-- =====================================================================
+CREATE TABLE wifi_zones (
+    wifi_id             INT PRIMARY KEY,
+    floor_id            INT NOT NULL,
+    ssid                VARCHAR(40),
+    coverage_radius_m   INT,
+    center_x_m          DECIMAL(8,2),  center_y_m          DECIMAL(8,2),
+    center_latitude     DECIMAL(9,6),  center_longitude    DECIMAL(9,6),
+    speed_mbps          INT,
+    is_free             TINYINT DEFAULT 1,
+    FOREIGN KEY (floor_id) REFERENCES floors(floor_id)
+);
+
+INSERT INTO wifi_zones (wifi_id, floor_id, ssid, coverage_radius_m, center_x_m, center_y_m, center_latitude, center_longitude, speed_mbps, is_free) VALUES
+  (1,  102, 'SLA-Free',         60, 1600, 1050, 21.123660, 72.756540, 50,  1),
+  (2,  103, 'SLA-Free',         60, 1600, 1013, 21.123327, 72.756540, 50,  1),
+  (3,  104, 'SLA-Free',         70, 1600, 1030, 21.123480, 72.756540, 50,  1),
+  (4,  104, 'SLA-Gate-A',       80, 1620, 1035, 21.123525, 72.756732, 100, 1),
+  (5,  105, 'SLA-Lounge',       40, 1550, 1017, 21.123363, 72.756060, 200, 0),
+  (6,  202, 'SLA-Free',         70, 1625, 1460, 21.127344, 72.756780, 50,  1),
+  (7,  203, 'SLA-Free',         70, 1625, 1415, 21.126945, 72.756780, 50,  1),
+  (8,  204, 'SLA-Free',         80, 1625, 1428, 21.127062, 72.756780, 50,  1),
+  (9,  204, 'SLA-Gate-B',       90, 1640, 1440, 21.127233, 72.756924, 100, 1),
+  (10, 205, 'SLA-Premium',      50, 1560, 1420, 21.127052, 72.756156, 300, 0),
+  (11, 205, 'SLA-Transit',      50, 1570, 1422, 21.127008, 72.756252, 200, 1),
+  (12, 103, 'SLA-Staff',        30, 1508, 1005, 21.123255, 72.755657, 100, 0);
+
+-- =====================================================================
+-- 27. TAXI STANDS (ground-level pick-up / drop-off bays)
+-- =====================================================================
+CREATE TABLE taxi_stands (
+    stand_id    INT PRIMARY KEY,
+    terminal_id INT NOT NULL,
+    floor_id    INT NOT NULL,
+    code        VARCHAR(12),
+    stand_type  VARCHAR(30),
+    capacity    INT,
+    x_m         DECIMAL(8,2),  y_m        DECIMAL(8,2),
+    latitude    DECIMAL(9,6),  longitude  DECIMAL(9,6),
+    FOREIGN KEY (terminal_id) REFERENCES terminals(terminal_id),
+    FOREIGN KEY (floor_id)    REFERENCES floors(floor_id)
+);
+
+INSERT INTO taxi_stands (stand_id, terminal_id, floor_id, code, stand_type, capacity, x_m, y_m, latitude, longitude) VALUES
+  (1, 1, 102, 'TX-T1-ARR', 'App-cab Arrivals',  20, 1640, 1005, 21.123255, 72.756924),
+  (2, 1, 102, 'TX-T1-DEP', 'App-cab Departures',20, 1690, 1008, 21.123282, 72.757404),
+  (3, 1, 102, 'TX-T1-PRE', 'Prepaid Taxi',       8, 1635, 1008, 21.123282, 72.756876),
+  (4, 2, 202, 'TX-T2-ARR', 'App-cab Arrivals',  30, 1640, 1410, 21.126900, 72.756924),
+  (5, 2, 202, 'TX-T2-DEP', 'App-cab Departures',30, 1690, 1410, 21.126900, 72.757404),
+  (6, 2, 202, 'TX-T2-PRE', 'Prepaid Taxi',      12, 1635, 1410, 21.126900, 72.756876);
+
+-- =====================================================================
+-- 28. CAR RENTAL DESKS
+-- =====================================================================
+CREATE TABLE car_rental_desks (
+    desk_id     INT PRIMARY KEY,
+    terminal_id INT NOT NULL,
+    floor_id    INT NOT NULL,
+    code        VARCHAR(12),
+    operator    VARCHAR(60),
+    x_m         DECIMAL(8,2),  y_m        DECIMAL(8,2),
+    latitude    DECIMAL(9,6),  longitude  DECIMAL(9,6),
+    open_time   TIME,          close_time TIME,
+    phone_ext   VARCHAR(8),
+    FOREIGN KEY (terminal_id) REFERENCES terminals(terminal_id),
+    FOREIGN KEY (floor_id)    REFERENCES floors(floor_id)
+);
+
+INSERT INTO car_rental_desks (desk_id, terminal_id, floor_id, code, operator, x_m, y_m, latitude, longitude, open_time, close_time, phone_ext) VALUES
+  (1, 1, 102, 'CR-T1-01', 'Hertz',      1672, 1009, 21.123291, 72.757231, '06:00', '22:00', '4101'),
+  (2, 1, 102, 'CR-T1-02', 'Avis',       1674, 1009, 21.123291, 72.757250, '06:00', '22:00', '4102'),
+  (3, 1, 102, 'CR-T1-03', 'Zoomcar',    1676, 1009, 21.123291, 72.757269, '00:00', '23:59', '4103'),
+  (4, 2, 202, 'CR-T2-01', 'Hertz',      1672, 1411, 21.126909, 72.757231, '06:00', '22:00', '4201'),
+  (5, 2, 202, 'CR-T2-02', 'Avis',       1674, 1411, 21.126909, 72.757250, '06:00', '22:00', '4202'),
+  (6, 2, 202, 'CR-T2-03', 'Budget',     1676, 1411, 21.126909, 72.757269, '06:00', '22:00', '4203'),
+  (7, 2, 202, 'CR-T2-04', 'Enterprise', 1678, 1411, 21.126909, 72.757288, '06:00', '22:00', '4204'),
+  (8, 2, 203, 'CR-T2-05', 'Europcar',   1680, 1413, 21.126927, 72.757308, '06:00', '21:00', '4205');
+
+-- =====================================================================
+-- 29. TRANSPORT NODES (bus bays, metro, auto stands, shuttles)
+-- =====================================================================
+CREATE TABLE transport_nodes (
+    node_id     INT PRIMARY KEY,
+    terminal_id INT NOT NULL,
+    floor_id    INT NOT NULL,
+    code        VARCHAR(12),
+    node_type   VARCHAR(30),
+    connects_to VARCHAR(120),
+    x_m         DECIMAL(8,2),  y_m        DECIMAL(8,2),
+    latitude    DECIMAL(9,6),  longitude  DECIMAL(9,6),
+    FOREIGN KEY (terminal_id) REFERENCES terminals(terminal_id),
+    FOREIGN KEY (floor_id)    REFERENCES floors(floor_id)
+);
+
+INSERT INTO transport_nodes (node_id, terminal_id, floor_id, code, node_type, connects_to, x_m, y_m, latitude, longitude) VALUES
+  (1,  1, 102, 'TN-T1-BUS1',  'Bus Stop',         'GSRTC to Surat City Centre every 30 min',  1696, 1003, 21.123237, 72.757452),
+  (2,  1, 102, 'TN-T1-BUS2',  'Bus Stop',         'City Bus Route 14 to Railway Station',     1700, 1003, 21.123237, 72.757500),
+  (3,  1, 102, 'TN-T1-MET',   'Metro Connection', 'Surat Metro Line 2 — Airport Station',     1500, 1005, 21.123255, 72.755580),
+  (4,  1, 102, 'TN-T1-AUTO',  'Auto Stand',       'Shared and private autos to city',         1693, 1008, 21.123282, 72.757433),
+  (5,  1, 102, 'TN-T1-SHU',   'Shuttle Stop',     'Airport shuttle to T2 every 15 min',       1686, 1005, 21.123255, 72.757366),
+  (6,  2, 202, 'TN-T2-BUS1',  'Bus Stop',         'GSRTC to Surat City Centre every 30 min',  1696, 1412, 21.126918, 72.757452),
+  (7,  2, 202, 'TN-T2-BUS2',  'Bus Stop',         'Express bus to Surat Railway Station',     1700, 1412, 21.126918, 72.757500),
+  (8,  2, 202, 'TN-T2-MET',   'Metro Connection', 'Surat Metro Line 2 — Airport Station',     1500, 1412, 21.126918, 72.755580),
+  (9,  2, 202, 'TN-T2-IBUS',  'Intercity Bus',    'Luxury bus to Mumbai, Ahmedabad, Vadodara', 1702, 1412, 21.126918, 72.757519),
+  (10, 2, 202, 'TN-T2-SHU',   'Shuttle Stop',     'Airport shuttle to T1 every 15 min',       1688, 1412, 21.126918, 72.757385);
 
 -- =====================================================================
 -- END OF FILE

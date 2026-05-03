@@ -3,61 +3,164 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AeroGuide - Skylight International Airport</title>
-    <!-- Modern Font: Inter -->
+    <title>AeroGuide — Skylight International Airport</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <!-- FontAwesome for Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Header -->
-        <header class="glass-header">
-            <div class="logo-area">
-                <i class="fa-solid fa-plane-departure logo-icon"></i>
-                <div class="titles">
-                    <h1>AeroGuide</h1>
-                    <p>Skylight International Airport</p>
+
+<!-- ══════════════════════════════════════════
+     LANDING PAGE
+══════════════════════════════════════════ -->
+<div id="page-landing">
+
+    <header class="lp-header">
+        <div class="lp-logo">
+            <div class="lp-logo-box"><i class="fa-solid fa-plane-departure"></i></div>
+            <span class="lp-logo-name">AERO<span>GUIDE</span></span>
+        </div>
+        <div class="lp-header-links">
+            <a href="admin.html" class="lp-link admin">
+                <i class="fa-solid fa-shield-halved"></i> Admin
+            </a>
+        </div>
+    </header>
+
+    <main class="lp-main">
+        <div class="lp-eyebrow">
+            <i class="fa-solid fa-circle-dot"></i>
+            Skylight International Airport · SLA
+        </div>
+        <h1 class="lp-title">
+            Your Personal<br><strong>Airport Companion</strong>
+        </h1>
+        <p class="lp-sub">
+            Real-time flight updates, navigation, dining, and more —
+            all in one intelligent assistant.
+        </p>
+        <button class="lp-cta" id="btn-get-started">
+            Get Started <i class="fa-solid fa-arrow-right"></i>
+        </button>
+    </main>
+
+    <footer class="lp-footer">
+        <span>T1 Domestic</span>
+        <div class="lp-footer-dot"></div>
+        <span>T2 International</span>
+        <div class="lp-footer-dot"></div>
+        <span>Surat, India</span>
+    </footer>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     LOGIN MODAL
+══════════════════════════════════════════ -->
+<div id="login-modal" class="overlay hidden">
+    <div class="login-card">
+
+        <button class="login-close" id="btn-close-login" type="button">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+
+        <div class="login-header">
+            <div class="login-icon"><i class="fa-solid fa-plane-departure"></i></div>
+            <div>
+                <h2>Welcome Aboard</h2>
+                <p>Enter your details to begin</p>
+            </div>
+        </div>
+
+        <form id="login-form" autocomplete="off">
+            <div class="form-field">
+                <label>Full Name</label>
+                <input type="text" id="login-name" placeholder="e.g. Harsh Kamoriya" required>
+            </div>
+
+            <div class="form-field">
+                <label>Mobile Number</label>
+                <div class="phone-row">
+                    <span class="phone-pfx">+91</span>
+                    <input type="tel" id="login-mobile" placeholder="62675 20920"
+                           maxlength="10" pattern="[0-9]{10}" required>
                 </div>
+                <span class="field-hint">You'll receive an automated flight reminder call</span>
             </div>
-            <div class="status-indicator">
-                <span class="dot online"></span>
-                <span>Online</span>
-            </div>
-        </header>
 
-        <!-- Chat Area -->
-        <main class="chat-container" id="chat-container">
-            <!-- Messages will be injected here dynamically -->
-            <div class="message agent-message">
-                <div class="avatar"><i class="fa-solid fa-robot"></i></div>
-                <div class="bubble glass-bubble">
-                    <p>Welcome to Skylight International Airport! I'm AeroGuide. How can I help you today?</p>
-                </div>
+            <div class="form-field">
+                <label>Flight Number</label>
+                <input type="text" id="login-flight" placeholder="e.g. 6E211"
+                       style="text-transform:uppercase" required>
             </div>
-        </main>
 
-        <!-- Controls Area -->
-        <footer class="controls-area glass-footer">
-            <!-- Text Input (Fallback) -->
-            <form id="text-form" class="text-input-form">
-                <input type="text" id="text-input" placeholder="Type or tap the mic to speak..." autocomplete="off">
-                <button type="submit" id="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
-            </form>
+            <button type="submit" class="btn-login" id="login-btn">
+                <span id="login-btn-text">
+                    Board Now <i class="fa-solid fa-arrow-right"></i>
+                </span>
+                <span id="login-btn-loading" style="display:none">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Checking flight...
+                </span>
+            </button>
+            <p id="login-error" class="login-err"></p>
+        </form>
 
-            <!-- Voice Control -->
-            <div class="voice-controls">
-                <button id="mic-btn" class="mic-button">
-                    <i class="fa-solid fa-microphone"></i>
-                </button>
-                <p id="mic-status">Tap to speak</p>
+    </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     CHAT APP
+══════════════════════════════════════════ -->
+<div id="chat-app" class="hidden">
+
+    <header class="chat-header">
+        <div class="chat-logo">
+            <div class="chat-logo-box"><i class="fa-solid fa-plane-departure"></i></div>
+            <div class="chat-logo-text">
+                <h1>AeroGuide</h1>
+                <p>Skylight International Airport</p>
             </div>
-        </footer>
+        </div>
+        <div class="chat-header-right">
+            <div id="user-badge" style="display:none">
+                <i class="fa-solid fa-user-check"></i>
+                <span id="user-badge-name"></span>
+            </div>
+            <div class="online-dot"></div>
+        </div>
+    </header>
+
+    <div id="call-banner" style="display:none">
+        <i class="fa-solid fa-phone-volume fa-shake"></i>
+        <span id="call-banner-text">Preparing reminder call...</span>
     </div>
 
-    <script src="app.js"></script>
+    <main id="chat-messages">
+        <div class="msg agent">
+            <div class="msg-avatar"><i class="fa-solid fa-robot"></i></div>
+            <div class="msg-body">
+                <div class="msg-bubble">Welcome to Skylight International Airport. I'm AeroGuide — how can I assist you today?</div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="chat-footer">
+        <form id="text-form" class="input-row">
+            <input type="text" id="text-input" placeholder="Ask me anything about the airport..." autocomplete="off">
+            <button type="submit" id="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+        </form>
+        <div class="voice-row">
+            <button id="mic-btn" type="button"><i class="fa-solid fa-microphone"></i></button>
+            <p id="mic-status">Tap to speak</p>
+        </div>
+    </footer>
+
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
