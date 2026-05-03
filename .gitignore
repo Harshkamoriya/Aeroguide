@@ -1,3 +1,9 @@
+# Whisper / ML models (too large for GitHub)
+stt/models/
+*.pt
+*.bin
+*.onnx
+
 # Python
 __pycache__/
 *.pyc
