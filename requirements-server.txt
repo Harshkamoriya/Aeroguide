@@ -1,0 +1,19 @@
+# AeroGuide — Server dependencies only (for Render/Railway deployment)
+# No Whisper/PyTorch — keeps build under 2 minutes on free tier
+# Voice transcription falls back to browser Web Speech API on deployed version
+
+# Web server
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# HTTP (used for Groq API calls)
+requests>=2.31.0
+
+# File uploads (for audio endpoint)
+python-multipart>=0.0.9
+
+# Twilio (outbound calling)
+twilio>=9.0.0
+
+# Utilities
+python-dotenv>=1.0.0

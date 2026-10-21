@@ -3,21 +3,17 @@ nlu/intent.py — Intent classifier for AeroGuide airport companion.
 Uses Ollama (local LLM) with a rule-based keyword fallback for robustness.
 """
 
-import os
 import re
 import json
 import logging
-import requests
 
 load_dotenv = __import__('dotenv').load_dotenv
 load_dotenv(override=False)
 
 from agent.prompt import INTENT_SYSTEM_PROMPT, INTENT_USER_PROMPT
+from agent.llm import chat as llm_chat
 
 logger = logging.getLogger(__name__)
-
-OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 
 HISTORY_WINDOW = 10
 
@@ -46,6 +42,7 @@ _FACILITY_MAP = {
     "washroom": "restroom", "bathroom": "restroom",
     "cash": "ATM", "cash machine": "ATM", "money": "ATM", "bank": "ATM",
     "doctor": "Medical", "doc": "Medical", "first aid": "Medical", "medical": "Medical",
+    "emergency": "Medical", "ambulance": "Medical", "hospital": "Medical", "nurse": "Medical",
     "prayer": "Prayer Room", "namaz": "Prayer Room", "masjid": "Prayer Room",
     "smoke": "Smoking Area", "cigarette": "Smoking Area", "smoking": "Smoking Area",
     "baby": "Nursery", "nursing": "Nursery",
@@ -73,8 +70,7 @@ def _extract_json(text: str) -> dict:
 class IntentClassifier:
     """Classifies traveler utterances. Uses Ollama LLM with keyword fallback."""
 
-    def __init__(self, model: str = None):
-        self.model    = model or OLLAMA_MODEL
+    def __init__(self):
         self._history: list[dict] = []
 
     def classify(self, transcript: str, retries: int = 2) -> dict:
@@ -86,34 +82,42 @@ class IntentClassifier:
 
         for attempt in range(1, retries + 1):
             try:
-                resp = requests.post(
-                    f"{OLLAMA_URL}/api/chat",
-                    json={
-                        "model":      self.model,
-                        "keep_alive": -1,
-                        "messages": [
-                            {"role": "system", "content": INTENT_SYSTEM_PROMPT},
-                            {"role": "user",   "content": prompt},
-                        ],
-                        "format": "json",
-                        "stream": False,
-                        "options": {"temperature": 0.1, "num_predict": 80},
-                    },
-                    timeout=(5, 120),
+                content = llm_chat(
+                    messages=[
+                        {"role": "system", "content": INTENT_SYSTEM_PROMPT},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    max_tokens  = 80,
+                    temperature = 0.1,
+                    json_mode   = True,
                 )
-                resp.raise_for_status()
-                content = resp.json()["message"]["content"]
-                logger.debug(f"[NLU] Ollama raw: {content[:200]}")
-                result = _extract_json(content)
 
+                if content is None:
+                    if attempt < retries:
+                        logger.warning(f"[NLU] LLM returned None, retry {attempt}/{retries}")
+                        continue
+                    logger.warning("[NLU] LLM unavailable — using keyword fallback")
+                    return self._keyword_fallback(transcript)
+
+                logger.debug(f"[NLU] raw: {content[:200]}")
+                result = _extract_json(content)
                 intent = result.get("intent", "unknown")
 
-                # If model still returns unknown for a non-trivial input, use keyword fallback
                 if intent == "unknown" and len(transcript.split()) >= 2:
-                    logger.info(f"[NLU] Ollama→unknown, trying keyword fallback for: {transcript!r}")
+                    logger.info(f"[NLU] LLM→unknown, trying keyword fallback for: {transcript!r}")
                     fallback = self._keyword_fallback(transcript)
                     if fallback["intent"] != "unknown":
                         return fallback
+
+                # If LLM left facility_type null, fill it from keyword map
+                ents = result.get("entities", {})
+                if not ents.get("facility_type"):
+                    kw_result = self._keyword_fallback(transcript)
+                    kw_facility = kw_result.get("entities", {}).get("facility_type")
+                    if kw_facility:
+                        ents["facility_type"] = kw_facility
+                        result["entities"] = ents
+                        logger.info(f"[NLU] keyword filled facility_type={kw_facility}")
 
                 ents = result.get("entities", {})
                 logger.info(
@@ -122,13 +126,6 @@ class IntentClassifier:
                     f"facility={ents.get('facility_type')} gate={ents.get('gate_code')}"
                 )
                 return result
-
-            except (requests.ConnectionError, requests.Timeout):
-                if attempt < retries:
-                    logger.warning(f"[NLU] Ollama unreachable, retry {attempt}/{retries}")
-                else:
-                    logger.warning("[NLU] Ollama unavailable — using keyword fallback")
-                    return self._keyword_fallback(transcript)
 
             except Exception as e:
                 logger.error(f"[NLU] {type(e).__name__}: {e}")

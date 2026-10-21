@@ -278,10 +278,37 @@ async def push_flight_alert(session_id: str, flight_number: str,
 
 # ── /test/* endpoints (for speech.py CLI client) ───────────────────────────
 
+@app.get("/stt/token")
+def stt_token():
+    """Mint a short-lived AssemblyAI streaming token. The API key stays on the server."""
+    api_key = os.getenv("ASSEMBLY_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ASSEMBLY_API_KEY is not set")
+    try:
+        resp = _requests.get(
+            "https://streaming.assemblyai.com/v3/token",
+            params={
+                "expires_in_seconds": "600",
+                "max_session_duration_seconds": "3600",
+            },
+            headers={"Authorization": api_key},
+            timeout=(5, 20),
+        )
+    except Exception as e:
+        logger.error(f"[/stt/token] {e}")
+        raise HTTPException(status_code=502, detail="Could not reach AssemblyAI")
+    if not resp.ok:
+        logger.error(f"[/stt/token] HTTP {resp.status_code}: {resp.text[:180]}")
+        raise HTTPException(status_code=502, detail="AssemblyAI token request failed")
+    return resp.json()
+
+
 @app.post("/test/transcribe")
-def test_transcribe(audio: UploadFile = File(...)):
+def test_transcribe(audio: UploadFile = File(...), partial: int = Query(0)):
     """
     Accept a WAV file upload and return the transcribed text.
+    partial=1 is a live caption of the clip so far. It does not update
+    the transcriber's memory; the final call after the user pauses does.
     Usage: POST multipart/form-data with field 'audio' containing WAV bytes.
     """
     audio_bytes = audio.file.read()
@@ -289,8 +316,8 @@ def test_transcribe(audio: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Empty audio file.")
     try:
         transcriber = _get_transcriber()
-        result      = transcriber.transcribe(audio_bytes)
-        return {"text": result["text"], "confidence": result["confidence"]}
+        result      = transcriber.transcribe(audio_bytes, commit_context=partial != 1)
+        return {"text": result["text"], "confidence": result["confidence"], "partial": partial == 1}
     except Exception as e:
         logger.error(f"[/test/transcribe] {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -387,6 +414,19 @@ def register_user(body: RegisterRequest):
                 registered_at  TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        existing = conn.execute(
+            "SELECT user_id FROM users WHERE mobile_number = ? AND UPPER(flight_number) = ?",
+            (number, flight),
+        ).fetchone()
+        if existing:
+            conn.close()
+            return {
+                "status":        "already_registered",
+                "user_id":       existing[0],
+                "name":          body.name.strip(),
+                "flight_number": flight,
+                "message":       f"You are already registered for flight {flight}.",
+            }
         conn.execute(
             "INSERT INTO users (name, mobile_number, flight_number, session_id) VALUES (?, ?, ?, ?)",
             (body.name.strip(), number, flight, body.session_id),
@@ -426,15 +466,16 @@ def _flight_alert_loop() -> None:
                     u.mobile_number,
                     u.flight_number,
                     g.gate_code,
-                    t.code     AS terminal_code,
-                    r.dest_city
+                    t.code          AS terminal_code,
+                    r.dest_city,
+                    fs.scheduled_time
                 FROM users u
                 JOIN flight_schedule fs ON UPPER(fs.flight_number) = UPPER(u.flight_number)
                 JOIN gates     g  ON g.gate_id     = fs.gate_id
                 JOIN terminals t  ON t.terminal_id = fs.terminal_id
                 JOIN routes    r  ON r.route_id    = fs.route_id
                 WHERE u.call_sent = 0
-                  AND fs.direction = 'departure'
+                  AND UPPER(fs.direction) = 'DEPARTURE'
                   AND time(fs.scheduled_time) BETWEEN
                         time('now', '+25 minutes', 'localtime') AND
                         time('now', '+35 minutes', 'localtime')
@@ -443,12 +484,13 @@ def _flight_alert_loop() -> None:
 
             for row in rows:
                 sid = make_departure_call(
-                    to_number     = row["mobile_number"],
-                    name          = row["name"],
-                    flight_number = row["flight_number"],
-                    destination   = row["dest_city"],
-                    gate_code     = row["gate_code"],
-                    terminal      = row["terminal_code"],
+                    to_number      = row["mobile_number"],
+                    name           = row["name"],
+                    flight_number  = row["flight_number"],
+                    destination    = row["dest_city"],
+                    gate_code      = row["gate_code"],
+                    terminal       = row["terminal_code"],
+                    scheduled_time = row["scheduled_time"],
                 )
                 # Mark as called (1) or failed (2)
                 status = 1 if sid else 2
@@ -474,24 +516,44 @@ threading.Thread(target=_flight_alert_loop, daemon=True).start()
 # ── Test call endpoint ─────────────────────────────────────────────────────
 
 class TestCallRequest(BaseModel):
-    to_number:     str
-    name:          str   = "Traveler"
-    flight_number: str   = "6E211"
-    destination:   str   = "Mumbai"
-    gate_code:     str   = "A5"
-    terminal:      str   = "T1"
+    to_number:      str
+    name:           str   = "Traveler"
+    flight_number:  str   = "6E211"
+    destination:    str   = "Mumbai"
+    gate_code:      str   = "A5"
+    terminal:       str   = "T1"
+    scheduled_time: Optional[str] = None   # e.g. "14:35" — looked up from DB if omitted
 
 @app.post("/test/call")
 def test_call(body: TestCallRequest):
     """Fire an immediate Twilio test call to a verified number."""
     from calls.twilio_caller import make_departure_call
+    import sqlite3 as _sqlite3
+
+    scheduled_time = body.scheduled_time
+    if not scheduled_time:
+        # Try to look up the real departure time from the DB
+        try:
+            conn = _sqlite3.connect(_admin_db_path())
+            row = conn.execute("""
+                SELECT fs.scheduled_time FROM flight_schedule fs
+                WHERE UPPER(fs.flight_number) = ? AND fs.direction = 'departure'
+                LIMIT 1
+            """, (body.flight_number.upper(),)).fetchone()
+            conn.close()
+            if row:
+                scheduled_time = row[0]
+        except Exception:
+            pass
+
     sid = make_departure_call(
-        to_number     = body.to_number,
-        name          = body.name,
-        flight_number = body.flight_number,
-        destination   = body.destination,
-        gate_code     = body.gate_code,
-        terminal      = body.terminal,
+        to_number      = body.to_number,
+        name           = body.name,
+        flight_number  = body.flight_number,
+        destination    = body.destination,
+        gate_code      = body.gate_code,
+        terminal       = body.terminal,
+        scheduled_time = scheduled_time,
     )
     if not sid:
         raise HTTPException(status_code=500,
@@ -587,12 +649,13 @@ def admin_users(admin_key: str = Query(...)):
         fn = row["flight_number"].upper()
         if fn not in flight_infos:
             info = conn.execute("""
-                SELECT g.gate_code, t.code AS terminal_code, r.dest_city, fs.scheduled_time
+                SELECT g.gate_code, t.code AS terminal_code, r.dest_city, fs.scheduled_time, fs.direction
                 FROM flight_schedule fs
                 JOIN gates     g ON g.gate_id     = fs.gate_id
                 JOIN terminals t ON t.terminal_id = fs.terminal_id
                 JOIN routes    r ON r.route_id    = fs.route_id
-                WHERE UPPER(fs.flight_number) = ? AND fs.direction = 'departure'
+                WHERE UPPER(fs.flight_number) = ?
+                ORDER BY CASE WHEN UPPER(fs.direction) = 'DEPARTURE' THEN 0 ELSE 1 END
                 LIMIT 1
             """, (fn,)).fetchone()
             flight_infos[fn] = dict(info) if info else {}
@@ -649,7 +712,8 @@ def admin_terminal_change(body: TerminalChangeRequest):
         SELECT r.dest_city, fs.scheduled_time
         FROM flight_schedule fs
         LEFT JOIN routes r ON r.route_id = fs.route_id
-        WHERE UPPER(fs.flight_number) = ? AND fs.direction = 'departure'
+        WHERE UPPER(fs.flight_number) = ?
+        ORDER BY CASE WHEN UPPER(fs.direction) = 'DEPARTURE' THEN 0 ELSE 1 END
         LIMIT 1
     """, (flight,)).fetchone()
     destination = schedule["dest_city"] if schedule else "your destination"
@@ -670,6 +734,12 @@ def admin_terminal_change(body: TerminalChangeRequest):
             new_terminal  = body.new_terminal,
             new_gate      = body.new_gate,
         )
+        status = 1 if sid else 2
+        upd = _sqlite3.connect(_admin_db_path())
+        upd.execute("UPDATE users SET call_sent = ? WHERE user_id = ?",
+                    (status, user["user_id"]))
+        upd.commit()
+        upd.close()
         results.append({
             "user_id":  user["user_id"],
             "name":     user["name"],

@@ -29,6 +29,9 @@ EXAMPLES:
 "is 6E211 delayed" → {"intent":"flight_status","confidence":0.99,"entities":{"flight_number":"6E211","airline":"IndiGo","destination":null,"terminal":null,"gate_code":null,"food_item":null,"brand_name":null,"facility_type":null,"floor_ref":null},"language":"english"}
 "where is gate B7" → {"intent":"navigation","confidence":0.98,"entities":{"flight_number":null,"airline":null,"destination":null,"terminal":null,"gate_code":"B7","food_item":null,"brand_name":null,"facility_type":null,"floor_ref":null},"language":"english"}
 "ATM kahan hai" → {"intent":"service_info","confidence":0.97,"entities":{"flight_number":null,"airline":null,"destination":null,"terminal":null,"gate_code":null,"food_item":null,"brand_name":null,"facility_type":"ATM","floor_ref":null},"language":"hinglish"}
+"I have a medical emergency" → {"intent":"service_info","confidence":0.99,"entities":{"flight_number":null,"airline":null,"destination":null,"terminal":null,"gate_code":null,"food_item":null,"brand_name":null,"facility_type":"Medical","floor_ref":null},"language":"english"}
+"someone needs first aid" → {"intent":"service_info","confidence":0.99,"entities":{"flight_number":null,"airline":null,"destination":null,"terminal":null,"gate_code":null,"food_item":null,"brand_name":null,"facility_type":"Medical","floor_ref":null},"language":"english"}
+"where is the doctor" → {"intent":"service_info","confidence":0.98,"entities":{"flight_number":null,"airline":null,"destination":null,"terminal":null,"gate_code":null,"food_item":null,"brand_name":null,"facility_type":"Medical","floor_ref":null},"language":"english"}
 
 Output a single JSON object only."""
 

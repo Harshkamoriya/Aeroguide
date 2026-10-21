@@ -12,6 +12,7 @@ Model sizes (downloaded to stt/models/):
 import io
 import os
 import logging
+import threading
 import numpy as np
 
 logger     = logging.getLogger(__name__)
@@ -61,32 +62,43 @@ class Transcriber:
         logger.info(f"[STT] Loading Whisper '{model_size}' (offline)...")
         self.model      = whisper.load_model(model_size, download_root=MODEL_DIR)
         self._prev_text = ""
+        self._lock      = threading.Lock()
         logger.info("[STT] Whisper ready.")
 
-    def transcribe(self, audio_bytes: bytes) -> dict:
+    def transcribe(self, audio_bytes: bytes, commit_context: bool = True) -> dict:
         """
         Transcribe raw WAV bytes to text.
+        commit_context=False is a live partial: return the text, but do not
+        keep it as context for the next utterance.
         Returns: {"text": str, "confidence": float, "language": str}
         """
         if not audio_bytes:
             return {"text": "", "confidence": 0.0, "language": "english"}
 
-        audio  = self._to_array(audio_bytes)
-        prompt = AIRPORT_PROMPT
-        if self._prev_text:
-            prompt += " " + self._prev_text[-120:]
+        with self._lock:
+            audio  = self._to_array(audio_bytes)
+            prompt = AIRPORT_PROMPT
+            if commit_context and self._prev_text:
+                prompt += " " + self._prev_text[-120:]
 
-        result = self.model.transcribe(audio, **{**_DECODE_KWARGS, "initial_prompt": prompt})
-        text   = (result.get("text") or "").strip()
-        conf   = _confidence(result.get("segments", []))
+            kwargs = {**_DECODE_KWARGS, "initial_prompt": prompt}
+            if not commit_context:
+                kwargs["condition_on_previous_text"] = False
 
-        if conf < CONF_FLOOR:
-            logger.info(f"[STT] conf={conf:.2f} below floor — discarding noise")
-            return {"text": "", "confidence": conf, "language": "english"}
+            result = self.model.transcribe(audio, **kwargs)
+            text   = (result.get("text") or "").strip()
+            conf   = _confidence(result.get("segments", []))
 
-        self._prev_text = text[-120:] if text else ""
-        logger.info(f"[STT] '{text}' conf={conf:.2f}")
-        return {"text": text, "confidence": conf, "language": "english"}
+            # Partials are shown live, so keep low-confidence text.
+            # Finals still drop noise.
+            if commit_context and conf < CONF_FLOOR:
+                logger.info(f"[STT] conf={conf:.2f} below floor — discarding noise")
+                return {"text": "", "confidence": conf, "language": "english"}
+
+            if commit_context and text:
+                self._prev_text = text[-120:]
+            logger.info(f"[STT] partial={not commit_context} '{text}' conf={conf:.2f}")
+            return {"text": text, "confidence": conf, "language": "english"}
 
     def set_context(self, agent_reply: str) -> None:
         """Feed last agent reply back as context to bias next transcription."""

@@ -23,25 +23,31 @@ def _spaced(flight: str) -> str:
 
 
 def _build_twiml(name: str, flight_number: str, destination: str,
-                  gate_code: str, terminal: str) -> str:
+                  gate_code: str, terminal: str,
+                  scheduled_time: str = None) -> str:
+    time_part = (
+        f"at {scheduled_time}" if scheduled_time
+        else "in approximately 30 minutes"
+    )
     message = (
         f"Hello {name}. This is an automated message from Skylight International Airport. "
-        f"Your flight {_spaced(flight_number)} to {destination} departs in approximately "
-        f"30 minutes. Please proceed immediately to Gate {gate_code} in Terminal {terminal}. "
+        f"Your flight {_spaced(flight_number)} to {destination} is scheduled to depart "
+        f"{time_part}. Please proceed immediately to Gate {gate_code} in Terminal {terminal}. "
         f"Please have your boarding pass ready. We wish you a safe and pleasant flight. "
         f"Goodbye."
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f'<Say voice="Polly.Raveena" language="en-IN">{message}</Say>'
+        f'<Say voice="alice" language="en-IN">{message}</Say>'
         '<Pause length="1"/>'
-        f'<Say voice="Polly.Raveena" language="en-IN">{message}</Say>'
+        f'<Say voice="alice" language="en-IN">{message}</Say>'
         "</Response>"
     )
 
 
 def _call(to_number: str, twiml: str) -> str | None:
+
     """Internal: place a Twilio call with given TwiML. Returns SID or None."""
     if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
         logger.warning("[Twilio] Credentials not configured — skipping call.")
@@ -61,9 +67,10 @@ def _call(to_number: str, twiml: str) -> str | None:
 
 
 def make_departure_call(to_number: str, name: str, flight_number: str,
-                         destination: str, gate_code: str, terminal: str) -> str | None:
+                         destination: str, gate_code: str, terminal: str,
+                         scheduled_time: str = None) -> str | None:
     """Initiate departure reminder call. Returns Twilio call SID or None."""
-    twiml = _build_twiml(name, flight_number, destination, gate_code, terminal)
+    twiml = _build_twiml(name, flight_number, destination, gate_code, terminal, scheduled_time)
     sid   = _call(to_number, twiml)
     if sid:
         logger.info(f"[Twilio] Departure call → {to_number} flight={flight_number} SID={sid}")
@@ -84,9 +91,9 @@ def make_terminal_change_call(to_number: str, name: str, flight_number: str,
     twiml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f'<Say voice="Polly.Raveena" language="en-IN">{message}</Say>'
+        f'<Say voice="alice" language="en-IN">{message}</Say>'
         '<Pause length="1"/>'
-        f'<Say voice="Polly.Raveena" language="en-IN">{message}</Say>'
+        f'<Say voice="alice" language="en-IN">{message}</Say>'
         "</Response>"
     )
     sid = _call(to_number, twiml)

@@ -1,0 +1,369 @@
+AeroGuide — Known Issues, Root Causes, and Fix Plan
+====================================================
+Captured from a full codebase review of the current chat / voice / agent
+pipeline vs README.md promised features.
+
+This is a demo pipeline, not a live airport agent.
+Current loop:
+
+    Mic (tap start/stop)
+      → record whole clip
+      → POST /test/transcribe  (Whisper, CPU)
+      → only THEN show user text in chat
+      → POST /test/full
+           Intent (LLM or keyword fallback)
+           → SQLite lookup
+           → canned template  OR  cached reply  OR  LLM  OR  hardcoded fallback
+      → show agent reply
+      → POST /test/synthesize (pyttsx3 TTS)
+
+The browser does not use WebSocket. It uses /test/full (meant for the CLI).
+Memory is only flight_number + terminal. Login flight is not injected into
+that memory.
+
+
+================================================================
+A. USER-REPORTED ISSUES
+================================================================
+
+1) When speaking, transcribed text does not appear on the chat screen
+--------------------------------------------------------------------
+Symptom:
+  While the passenger talks, the chat does not show what they are saying.
+  Only "Listening..." / a typing indicator is visible.
+
+Root cause:
+  web/app.js never shows live / interim speech.
+  Recording is tap-to-start / tap-to-stop. The user bubble is created only
+  after Whisper returns, inside processText().
+
+  Flow today:
+    record → upload WAV → wait for Whisper → THEN addMessage(user text)
+
+Files:
+  web/app.js          (mic handler, transcribeAudio, processText)
+  api/server.py       POST /test/transcribe
+  stt/transcriber.py
+
+
+2) Transcribed text appears on the UI only after some time
+----------------------------------------------------------
+Symptom:
+  The user's words show up late, after a long pause.
+
+Root cause:
+  Same as issue 1. Transcription is blocking and happens BEFORE the UI
+  paints the user bubble. The passenger waits twice:
+    1. Whisper on CPU (several seconds for model "base")
+    2. Full agent turn via POST /test/full (NLU + DB + LLM/template)
+
+  There is no interim caption, no "you said..." placeholder, and no
+  streaming STT.
+
+Files:
+  web/app.js
+  stt/transcriber.py
+  api/server.py       POST /test/transcribe, POST /test/full
+
+
+3) Speech is not recognised / transcribed correctly
+---------------------------------------------------
+Symptom:
+  What the passenger said is not what appears in chat. Flight numbers,
+  gate names, Hindi / Hinglish, and Indian English are especially bad.
+
+Root causes:
+  - Whisper model is "base" on CPU — too small for Indian English,
+    Hindi / Hinglish, flight codes (6E211), and gate names.
+  - Tap-to-stop with no VAD — clips the end of a sentence or sends
+    long silence / noise.
+  - Deprecated ScriptProcessor in the browser can drop audio chunks.
+  - initial_prompt + previous transcript text can inject airport words
+    the user never said.
+  - condition_on_previous_text = True increases Whisper hallucination.
+  - No language hint (en / hi) is set on decode.
+  - No noise suppression / silence trim.
+  - Browser Web Speech API (live captions) is not used, even though
+    deploy notes mention it as a fallback.
+
+Files:
+  stt/transcriber.py
+  web/app.js
+  requirements.txt / requirements-server.txt
+
+
+4) Answers are wrong, repetitive, and look hardcoded
+----------------------------------------------------
+Symptom:
+  Same replies again and again. Wrong intent (e.g. "where is gate B7"
+  treated as flight status). Follow-ups ignored. Feels scripted.
+
+Root causes (all real in code):
+
+  a) Templates run BEFORE the LLM
+     agent/skynet.py _template_response() short-circuits greeting,
+     goodbye, flight-found, baggage belt, medical, and navigation steps.
+     The model never speaks on those turns.
+
+  b) Global response cache
+     Keyed by intent + entities, shared across ALL users/sessions
+     on one AeroGuide instance. Same question → same sentence until
+     server restart. Only flight_status, baggage_info, checkin_help
+     skip the cache.
+
+  c) Keyword NLU fallback when Groq/Ollama fail or return "unknown"
+     nlu/intent.py _keyword_fallback():
+       - any utterance containing "gate" → flight_status
+         (checked BEFORE navigation)
+       - "thanks" / "thank you" → end_conversation
+       - confirm / deny have no keyword rules
+
+  d) Almost no dialogue state
+     confirm / deny exist as labels but are not handled.
+     followup is shown in the UI and then ignored next turn.
+     last_intent is stored and never read.
+     Login flight / gate / terminal are used for the welcome card only
+     — ConversationMemory is not seeded unless the user says them again.
+
+  e) Static brochure text
+     agent/prompt.py SYSTEM_PROMPT embeds a static airport cheat sheet.
+     _fallback() has canned copy like "T1 Food Court... Haldiram's,
+     McDonald's, Starbucks...". Model may echo the prompt instead of DB.
+
+  f) Frontend uses /test/full, not /ws/{session_id}
+     WebSocket + proactive delay alerts exist on the server but the
+     chat page never connects, so alerts cannot reach the passenger.
+
+Files:
+  agent/skynet.py
+  agent/prompt.py
+  agent/llm.py
+  nlu/intent.py
+  nlu/entities.py
+  api/server.py
+  web/app.js
+
+
+================================================================
+B. ARCHITECTURE GAPS (README / PRD vs CODE)
+================================================================
+
+Promised                          Reality
+--------------------------------  --------------------------------------------
+Live voice + text companion       Batch record → Whisper → REST. No live captions.
+Context across turns              2 slots only (flight, terminal). Login flight
+                                  not seeded. History not restored on refresh.
+Real-time WebSocket + alerts      WS exists in api/server.py; web/app.js never
+                                  connects. Alerts cannot reach the chat UI.
+Flight status, gates, delays      SQLite status_default — not a live FIDS feed.
+Nav to gates / food / facilities  Graph exists; replies are robotic step dumps.
+                                  "gate" often misrouted to flight_status.
+Food, shops, lounges, ATMs,       Some SQL lookups; many intents have no real
+medical                           handler.
+Check-in, baggage, boarding       Thin DB + templates.
+Accessibility / escalate          Classified sometimes, then generic fallback.
+Fully offline LLM                 Groq first if GROQ_API_KEY set, then Ollama,
+                                  then keywords.
+13+ intents                       ~17 labels. confirm, deny, accessibility,
+                                  escalate, shop_query are mostly empty.
+Entity LLM resolution             ENTITY_* prompts exist and are never called.
+                                  Resolution is regex + alias maps only.
+Session persistence               Turns saved to SQLite but agent memory is
+                                  in-process only. Refresh = amnesia.
+
+
+================================================================
+C. IMPORTANT CODE DECISION POINTS
+================================================================
+
+- Template before LLM
+    agent/skynet.py  ~152-159, _template_response ~349-433
+
+- Global response cache
+    agent/skynet.py  _cache, _NO_CACHE_INTENTS, _cache_key
+
+- Keyword: "gate" → flight_status (before navigation)
+    nlu/intent.py  _keyword_fallback ~210-245
+
+- Keyword: "thanks" → end_conversation
+    nlu/intent.py  ~278-279
+
+- LLM client order: Groq → Ollama → None
+    agent/llm.py
+
+- Memory slots only flight_number + terminal
+    agent/skynet.py  ConversationMemory
+
+- last_intent stored, never used
+    agent/skynet.py  ConversationMemory.update
+
+- ENTITY_* prompts unused
+    agent/prompt.py  (defined), nlu/entities.py  (never calls LLM)
+
+- Web UI bypasses WebSocket
+    web/app.js  processText → POST /test/full
+
+- Voice: show transcript only after Whisper
+    web/app.js  transcribeAudio → processText
+
+- Whisper prompt / previous-text leakage
+    stt/transcriber.py  AIRPORT_PROMPT, condition_on_previous_text
+
+- Login flight not injected into agent memory
+    web/app.js  showWelcome vs processText body
+    api/server.py  /test/full new_session
+
+- Singleton agent + shared cache
+    api/server.py  agent = AeroGuide()
+
+
+================================================================
+D. FIX PLAN (DO THESE IN ORDER)
+================================================================
+
+PHASE 1 — Make talking feel live  (issues 1, 2, 3)
+--------------------------------------------------
+Files: web/app.js, stt/transcriber.py, api/server.py
+
+Fixes:
+  [ ] Show a user bubble immediately while listening
+      ("Listening..." then live / interim text).
+  [ ] Use browser Web Speech API for live captions (Chrome).
+      Keep Whisper as fallback, not the primary path.
+  [ ] After STT, put the shown transcript in chat so the passenger
+      can see and correct it before / while the agent answers.
+  [ ] If keeping Whisper:
+        - use a larger model (small) for Hindi / Indian English
+        - set language (en / hi)
+        - turn OFF condition_on_previous_text
+        - stop stuffing previous transcript into initial_prompt
+        - add VAD / silence trim
+        - replace ScriptProcessor with AudioWorklet or MediaRecorder
+  [ ] Optional: let the user edit the transcript before send.
+
+
+PHASE 2 — Stop canned / wrong answers  (issue 4)
+------------------------------------------------
+Files: agent/skynet.py, nlu/intent.py, agent/prompt.py, agent/llm.py
+
+Fixes:
+  [ ] Templates should be DATA, not the spoken reply.
+      Let the LLM (or a response planner) write the sentence from
+      DB facts. Do not short-circuit greeting / flight / nav / baggage
+      with fixed strings.
+  [ ] Kill or scope the global cache (per session, or static FAQs only).
+  [ ] Fix keyword order:
+        "where is gate …" → navigation, not flight_status
+        do not treat "thanks" as goodbye
+  [ ] Seed ConversationMemory from login:
+        name, mobile, flight, gate, terminal
+  [ ] Handle confirm / deny against the last follow-up
+        ("Want directions?" → yes)
+  [ ] Strip the static airport essay from SYSTEM_PROMPT so the model
+      uses DATA, not memorized brochure copy.
+  [ ] Confirm Groq or Ollama is actually up. If both fail, the app is
+      100% keyword + _fallback() and will always sound fake.
+
+
+PHASE 3 — Become a real airport agent  (README / PRD gap)
+---------------------------------------------------------
+Files: agent/skynet.py, nlu/entities.py, nlu/intent.py,
+       db/*, web/app.js, api/server.py, agent/navigation.py
+
+Fixes:
+  [ ] Dialogue manager
+        pending question, slots (flight, gate, from/to, dietary),
+        clarification ("Which terminal?"),
+        multi-intent ("food near gate A12")
+  [ ] Tools instead of one-shot classify
+        get_flight, find_place, get_directions, search_food,
+        get_lounge, get_service — agent decides which to call
+  [ ] Wire the UI to /ws/{session_id}
+        streaming replies + proactive delay / boarding alerts
+  [ ] Real entity resolver
+        use unused ENTITY_* prompts
+        fuzzy match "indigo two one one" → 6E211
+        "mac d" → McDonald's
+  [ ] Live-ish flights
+        even a scheduled updater on flight_schedule beats frozen
+        status_default
+  [ ] Feature owners that are missing or empty:
+        accessibility
+        escalate / helpdesk handoff
+        shops
+        transport
+        check-in counters
+        lost-baggage flow
+        Hindi / language support
+  [ ] Nav UX
+        keep the graph, speak 1–2 next steps, not a full dump
+        use the existing map_hint in the UI
+  [ ] Restore session memory from SQLite on refresh / reconnect
+
+
+PHASE 4 — Product polish (after the brain works)
+------------------------------------------------
+  [ ] Better TTS (less robotic than default pyttsx3)
+  [ ] Admin flight editor that actually drives answers
+  [ ] Twilio as a real boarding / delay alert, not a 5-second demo call
+  [ ] Session restore after page refresh
+  [ ] Evaluation set of real passenger utterances
+      (flight codes, Hinglish, gate nav, food, medical, thanks, yes/no)
+  [ ] Remove debug prints in api/server.py /test/full ("Hello")
+
+
+================================================================
+E. HIGHEST-LEVERAGE FIRST PR
+================================================================
+
+Do these together; they will make the product feel different:
+
+  1. Live captions + show transcript immediately
+  2. Seed login flight / gate / terminal into agent memory
+  3. Stop template-first replies for greeting, flight, and navigation
+  4. Fix keyword misroute: "gate" must not always mean flight_status
+
+Then Phase 2 cache / confirm-deny / prompt cleanup.
+Then Phase 3 tools + WebSocket + missing features.
+
+
+================================================================
+F. MODULE OWNERSHIP (WHERE TO WORK)
+================================================================
+
+web/app.js            Voice UX, live captions, user-bubble timing,
+                      WebSocket client, login → memory seeding (client side)
+
+stt/transcriber.py    Whisper quality, language, VAD, prompt leakage
+
+tts/synthesizer.py    Spoken reply quality (Phase 4)
+
+api/server.py         /test/full vs /ws, session create/restore,
+                      seed memory from /register, alerts to UI
+
+agent/skynet.py       Turn pipeline, templates, cache, memory,
+                      confirm/deny, tool routing, dialogue state
+
+agent/prompt.py       SYSTEM_PROMPT brochure text, unused ENTITY prompts,
+                      tone / length rules that force formulaic replies
+
+agent/llm.py          Groq vs Ollama vs None; make failure visible
+
+agent/navigation.py   Path → natural 1–2 step directions, not a dump
+
+nlu/intent.py         Keyword order bugs, confirm/deny, thanks≠goodbye
+
+nlu/entities.py       Unused LLM entity layer; fuzzy flight/brand/gate
+
+nlu/prompt.py         Re-exports; keep in sync with agent/prompt.py
+
+db/setup.py           Schema + nav graph init
+db/session_manager.py Persist AND reload conversation / slots
+db/build_nav_graph.py Nav nodes/edges
+db/blueprint.sql      Airport ground truth (flights, brands, facilities)
+
+calls/twilio_caller.py  Demo call vs real boarding/delay alerts
+
+web/index.html        Chat chrome, listening / interim transcript UI
+web/admin.html        Ops / flight editing (Phase 4)
+)

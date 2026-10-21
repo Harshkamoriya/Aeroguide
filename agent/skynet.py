@@ -15,7 +15,6 @@ import json
 import logging
 import sqlite3
 import time
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -24,14 +23,13 @@ load_dotenv(override=False)
 
 from agent.prompt import SYSTEM_PROMPT, RESPONSE_TEMPLATE
 from agent import navigation as nav
+from agent.llm import chat as llm_chat
 from nlu.intent import IntentClassifier
 from nlu import entities as ent
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
-IST          = timezone(timedelta(hours=5, minutes=30))
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 # ── ConversationMemory ─────────────────────────────────────────────────────
@@ -248,27 +246,35 @@ class AeroGuide:
             if not gate_code and not facility_type and not brand_name:
                 results["facilities"] = ent.resolve_facility("restroom", terminal)
 
-            # GPS-based turn-by-turn directions
-            if user_lat is not None and user_lng is not None:
+            # Turn-by-turn directions: use GPS if available, else fall back to
+            # terminal/floor known from conversation context.
+            _nav_dest = nav.find_destination(
+                self.conn,
+                brand_name    = brand_name,
+                gate_code     = gate_code,
+                facility_type = facility_type,
+                terminal      = terminal,
+            )
+            if _nav_dest:
                 try:
-                    user_loc = nav.find_user_location(self.conn, user_lat, user_lng)
-                    dest     = nav.find_destination(
-                        self.conn,
-                        brand_name    = brand_name,
-                        gate_code     = gate_code,
-                        facility_type = facility_type,
-                        terminal      = terminal,
-                    )
-                    if user_loc and dest:
-                        results["directions"] = nav.build_directions(
-                            self.conn, user_loc, dest
+                    if user_lat is not None and user_lng is not None:
+                        user_loc = nav.find_user_location(self.conn, user_lat, user_lng)
+                    elif memory.terminal:
+                        user_loc = nav.find_location_from_context(
+                            self.conn, memory.terminal
+                        )
+                    else:
+                        user_loc = None
+
+                    if user_loc and _nav_dest:
+                        results["directions"]    = nav.build_directions(
+                            self.conn, user_loc, _nav_dest
                         )
                         results["user_location"] = user_loc
                 except Exception as e:
                     logger.error(f"[AeroGuide] Navigation engine error: {e}")
 
         elif intent == "service_info":
-            # Detect charging / Wi-Fi queries by keyword in facility_type or text
             if facility_type:
                 flt = facility_type.lower()
                 if any(k in flt for k in ("charg", "power", "usb", "socket", "plug")):
@@ -278,10 +284,7 @@ class AeroGuide:
                 else:
                     results["facilities"] = ent.resolve_facility(facility_type, terminal)
             else:
-                results["facilities"] = (
-                    ent.resolve_facility("ATM", terminal) +
-                    ent.resolve_facility("Currency Exchange", terminal)[:2]
-                )
+                results["facilities"] = ent.resolve_facility("ATM", terminal)
 
         elif intent == "transport_info":
             results["parking"]   = ent.resolve_parking(terminal)
@@ -350,6 +353,24 @@ class AeroGuide:
         """
         hint = lambda t, f, l: {"terminal": t, "floor": f, "landmark": l}
 
+        # Medical emergency — highest priority, immediate template, no LLM
+        facilities = db_results.get("facilities", [])
+        medical = [f for f in facilities if "medical" in f.get("type", "").lower()
+                   or "first aid" in f.get("name", "").lower()]
+        if intent == "service_info" and medical:
+            locs = " | ".join(
+                f"{f['name']} — {f['terminal_code']} {f['floor_code']} (open 24h)"
+                for f in medical
+            )
+            return {
+                "response": f"MEDICAL EMERGENCY: Go to {locs}. "
+                            "Alert any airport staff immediately or call the helpline at the info desk.",
+                "followup": None,
+                "map_hint": {"terminal": medical[0]["terminal_code"],
+                             "floor":    medical[0]["floor_code"],
+                             "landmark": medical[0]["name"]},
+            }
+
         if intent == "greeting":
             return {
                 "response": "Welcome to Skylight International Airport! I can help with "
@@ -366,16 +387,17 @@ class AeroGuide:
             }
 
         if intent == "navigation" and db_results.get("directions"):
-            d = db_results["directions"]
+            d     = db_results["directions"]
             steps = d.get("steps", [])
             dest  = d.get("destination_name", "your destination")
-            dist  = d.get("distance_m", "")
-            dist_txt = f"about {dist} metres" if dist else ""
-            summary = f"{steps[0]} " if steps else ""
-            if len(steps) > 1:
-                summary += steps[1]
+            dist  = d.get("distance_m", 0)
+            # Join all steps into a single readable response
+            numbered = " ".join(
+                f"Step {i}: {s}" for i, s in enumerate(steps, 1)
+            )
+            dist_txt = f" Total distance: about {dist}m." if dist else ""
             return {
-                "response": f"{summary} You'll reach {dest}{f', {dist_txt}' if dist_txt else ''}.",
+                "response": f"{numbered}{dist_txt}",
                 "followup": "Need directions to anything else?",
                 "map_hint": hint(
                     d.get("destination_terminal"),
@@ -437,23 +459,21 @@ class AeroGuide:
         )
 
         try:
-            resp = requests.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model":      OLLAMA_MODEL,
-                    "keep_alive": -1,       # never unload model from RAM
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user",   "content": prompt},
-                    ],
-                    "format": "json",
-                    "stream": False,
-                    "options": {"temperature": 0.4, "num_predict": 150},
-                },
-                timeout=(5, 180),
+            raw = llm_chat(
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": prompt},
+                ],
+                max_tokens  = 150,
+                temperature = 0.4,
+                json_mode   = True,
             )
-            resp.raise_for_status()
-            raw   = resp.json()["message"]["content"].strip()
+
+            if raw is None:
+                logger.error("[AeroGuide] LLM unavailable")
+                return self._fallback(intent)
+
+            raw   = raw.strip()
             start = raw.find("{")
             end   = raw.rfind("}")
             if start != -1 and end != -1:
@@ -463,16 +483,13 @@ class AeroGuide:
                 if parsed.get("followup"):
                     parsed["followup"] = self._clean(parsed["followup"])
                 logger.info(f"[AeroGuide] Response: '{parsed.get('response','')[:80]}'")
-                # Store in cache
                 if intent not in _NO_CACHE_INTENTS:
                     self._cache[key] = parsed
                     logger.info(f"[Cache] STORED for {key[:60]}")
                 return parsed
 
-        except (requests.ConnectionError, requests.Timeout):
-            logger.error("[AeroGuide] Ollama not reachable — is 'ollama serve' running?")
         except Exception as e:
-            logger.error(f"[AeroGuide] LLM failed: {e}")
+            logger.error(f"[AeroGuide] LLM parse failed: {e}")
 
         return self._fallback(intent)
 

@@ -470,7 +470,7 @@ function renderFlights(flights) {
                     <div class="fmeta"><div class="fmeta-lbl">Destination</div>${f.destination || '—'}</div>
                     <div class="fmeta"><div class="fmeta-lbl">Terminal</div>${f.terminal || '—'}</div>
                     <div class="fmeta"><div class="fmeta-lbl">Gate</div>${f.gate_code || '—'}</div>
-                    <div class="fmeta"><div class="fmeta-lbl">Departs</div>${f.departure_time ? f.departure_time.substring(0,5) : '—'}</div>
+                    <div class="fmeta"><div class="fmeta-lbl">Scheduled</div>${f.departure_time ? f.departure_time.substring(0,5) : '—'}</div>
                 </div>
                 <span class="pax-pill"><i class="fa-solid fa-users" style="font-size:10px"></i> ${f.user_count}</span>
                 <button class="a-btn a-btn-red" onclick="event.stopPropagation();openModal('${f.flight_number}','${f.destination||''}','${f.terminal||'T1'}')">

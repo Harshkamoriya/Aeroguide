@@ -63,6 +63,9 @@ def init_db(blueprint_path: str = BLUEPRINT, db_path: str = DB_PATH) -> None:
 
     _add_users_table(conn)
 
+    from db.build_nav_graph import build as _build_nav
+    _build_nav(conn)
+
     conn.close()
     logger.info("Session tables created. Database ready.")
 
